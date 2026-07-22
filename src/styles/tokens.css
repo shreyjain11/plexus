@@ -1,0 +1,39 @@
+/* Plexus design tokens — "precision drafting" identity.
+   Light engineering-paper field, disciplined dark tool rail, drafting-blue accent. */
+:root {
+  /* Paper (canvas field) */
+  --paper: #f6f7f4;
+  --paper-dot: #c9ccc4;
+  --paper-edge: #e3e5df;
+
+  /* Rail (tool chrome) */
+  --rail: #191c22;
+  --rail-raised: #23272f;
+  --rail-line: #31353e;
+  --rail-text: #e8eaee;
+  --rail-text-dim: #9aa0ab;
+
+  /* Ink (figure content) */
+  --ink: #23262c;
+  --ink-soft: #4b4f57;
+  --node-fill: #ffffff;
+
+  /* Accent — drafting blue */
+  --accent: #3563e9;
+  --accent-soft: rgba(53, 99, 233, 0.14);
+  --accent-strong: #2a4fc0;
+
+  /* Signals */
+  --warn: #b3611c;
+  --ok: #2e7d5b;
+
+  /* Type */
+  --font-ui: "Space Grotesk Variable", "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Shape + motion */
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --shadow-panel: 0 12px 32px rgba(15, 18, 24, 0.28);
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
+}
