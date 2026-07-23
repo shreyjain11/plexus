@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyStroke } from "../src/recognition/classify";
-import { borderPoint, routeEdge, snapEnd } from "../src/recognition/snap";
+import { borderPoint, routeEdge, snapEnd, snapToAlignment } from "../src/recognition/snap";
 import { isNodeRef, type DiagramNode, type Point, type Stroke } from "../src/types";
 
 /** Deterministic PRNG so jittered strokes are stable across runs. */
@@ -47,6 +47,26 @@ function ellipseStroke(cx: number, cy: number, rx: number, ry: number, n = 100):
   return pts;
 }
 
+/** Trace a diamond (vertices at the bbox edge midpoints). */
+function diamondStroke(x: number, y: number, w: number, h: number, n = 120): Stroke {
+  const verts = [
+    { x: x + w / 2, y },
+    { x: x + w, y: y + h / 2 },
+    { x: x + w / 2, y: y + h },
+    { x, y: y + h / 2 },
+  ];
+  const pts: Stroke = [];
+  const per = n * 0.985;
+  for (let i = 0; i < per; i++) {
+    const t = (i / n) * 4;
+    const a = verts[Math.floor(t) % 4]!;
+    const b = verts[(Math.floor(t) + 1) % 4]!;
+    const f = t - Math.floor(t);
+    pts.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  }
+  return pts;
+}
+
 function lineStroke(a: Point, b: Point, bow = 0, n = 40): Stroke {
   const pts: Stroke = [];
   const nx = -(b.y - a.y);
@@ -88,6 +108,21 @@ describe("classifyStroke — nodes", () => {
   it("recognizes an elongated ellipse (CV above the strict cut) as an ellipse", () => {
     const rec = classifyStroke(jitter(ellipseStroke(300, 300, 120, 55), 2, 17));
     expect(rec).toMatchObject({ kind: "node", type: "ellipse" });
+  });
+
+  it("recognizes a jittered diamond (corners at edge midpoints) as a diamond", () => {
+    const rec = classifyStroke(jitter(diamondStroke(200, 150, 180, 120), 2.5, 23));
+    expect(rec).toMatchObject({ kind: "node", type: "diamond" });
+  });
+
+  it("recognizes a square-ish diamond as a diamond, not an ellipse", () => {
+    const rec = classifyStroke(jitter(diamondStroke(100, 100, 150, 150), 2, 29));
+    expect(rec).toMatchObject({ kind: "node", type: "diamond" });
+  });
+
+  it("still calls an axis-aligned rectangle a rect, not a diamond", () => {
+    const rec = classifyStroke(jitter(rectStroke(100, 100, 200, 120), 2.5, 31));
+    expect(rec).toMatchObject({ kind: "node", type: "rect" });
   });
 
   it("clamps tiny closed sketches to the minimum node size, keeping the center", () => {
@@ -185,5 +220,31 @@ describe("snapping and routing", () => {
     expect(routed).toMatchObject({ x1: 20, y1: 30 });
     const end = snapEnd({ x: 20, y: 30 }, [rectNode]);
     expect(isNodeRef(end)).toBe(false);
+  });
+
+  it("clips against a diamond border along its rhombus edges", () => {
+    const dia: DiagramNode = { id: "d", type: "diamond", x: 0, y: 0, w: 200, h: 100, label: "" };
+    // Straight right from center (100,50): exits at the right vertex (200,50).
+    const p = borderPoint(dia, { x: 500, y: 50 });
+    expect(p.x).toBeCloseTo(200, 5);
+    expect(p.y).toBeCloseTo(50, 5);
+    // Any direction lands on |dx|/hw + |dy|/hh = 1.
+    const q = borderPoint(dia, { x: 180, y: 140 });
+    expect(Math.abs(q.x - 100) / 100 + Math.abs(q.y - 50) / 50).toBeCloseTo(1, 5);
+  });
+
+  it("snaps alignment when centers come within tolerance", () => {
+    const anchor: DiagramNode = { id: "a", type: "rect", x: 0, y: 0, w: 100, h: 100, label: "" };
+    const moving: DiagramNode = { id: "m", type: "rect", x: 300, y: 300, w: 100, h: 100, label: "" };
+    // Proposed y puts the moving center at 53 — within 6 of the anchor's 50.
+    const snapped = snapToAlignment([anchor, moving], "m", 205, 3, 100, 100);
+    expect(snapped.y).toBe(0);
+    expect(snapped.guideY).toBe(50);
+    expect(snapped.guideX).toBeNull();
+    expect(snapped.x).toBe(205);
+    // Far away: no snapping at all.
+    const free = snapToAlignment([anchor, moving], "m", 400, 400, 100, 100);
+    expect(free.guideX).toBeNull();
+    expect(free.guideY).toBeNull();
   });
 });

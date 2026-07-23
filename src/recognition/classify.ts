@@ -66,7 +66,7 @@ function turningDeg(a: Point, b: Point, c: Point): number {
  * ~50–60° (inside the angle window!) but their straws sit at the median,
  * while a drawn rectangle's corners concentrate all turning in one spot.
  */
-function countRingCorners(ring: Stroke, epsilon: number): number {
+function countRingCorners(ring: Stroke, epsilon: number): number[] {
   const n = ring.length;
   const W = RECOG.STRAW_WINDOW;
 
@@ -110,9 +110,9 @@ function countRingCorners(ring: Stroke, epsilon: number): number {
   // Simplified ring: both chains share their endpoints; drop each chain's last.
   const simp = [...simplify(chainA).slice(0, -1), ...simplify(chainB).slice(0, -1)];
   const m = simp.length;
-  if (m < 3) return 0;
+  if (m < 3) return [];
 
-  let corners = 0;
+  const corners: number[] = [];
   let lastPos = -Infinity;
   let firstPos = Infinity;
   for (let k = 0; k < m; k++) {
@@ -127,11 +127,33 @@ function countRingCorners(ring: Stroke, epsilon: number): number {
     const pos = ringIndex(iCur - bi, n);
     if (pos - lastPos < 2 * W) continue;
     if (firstPos !== Infinity && firstPos + n - pos < 2 * W) continue;
-    corners++;
+    corners.push(iCur);
     lastPos = pos;
     if (firstPos === Infinity) firstPos = pos;
   }
   return corners;
+}
+
+/**
+ * Distinguish a drawn diamond from a rectangle by *where* its corners sit:
+ * diamond vertices lie near the bbox edge midpoints (normalized coordinates
+ * (±1,0)/(0,±1) from the center), rectangle corners near the bbox corners
+ * (±1,±1). The mean of min(|nx|,|ny|) is ≈0 for a diamond, ≈1 for a rect.
+ */
+function isDiamond(ring: Stroke, cornerIdx: number[]): boolean {
+  if (cornerIdx.length < 3 || cornerIdx.length > 5) return false;
+  const b = bbox(ring);
+  if (b.w === 0 || b.h === 0) return false;
+  const cx = b.x + b.w / 2;
+  const cy = b.y + b.h / 2;
+  let sum = 0;
+  for (const i of cornerIdx) {
+    const p = ring[i]!;
+    const nx = Math.abs((p.x - cx) / (b.w / 2));
+    const ny = Math.abs((p.y - cy) / (b.h / 2));
+    sum += Math.min(nx, ny);
+  }
+  return sum / cornerIdx.length < 0.4;
 }
 
 /** std/mean of distances from the ring centroid — 0 for a perfect circle. */
@@ -166,24 +188,23 @@ export function classifyStroke(stroke: Stroke): Recognition {
 
   if (closed) {
     const ring = resample(stroke, RECOG.RING_SAMPLES, true);
-    const corners = countRingCorners(ring, RECOG.RDP_EPS_RATIO * diag);
+    const cornerIdx = countRingCorners(ring, RECOG.RDP_EPS_RATIO * diag);
+    const corners = cornerIdx.length;
     const cv = radiusCv(ring);
     const isEllipse =
       corners < 3 && (cv < RECOG.ELLIPSE_CV || (corners <= 2 && cv < RECOG.ELLIPSE_CV_LOOSE));
+
+    let type: NodeType;
+    if (isEllipse) type = "ellipse";
+    else if (isDiamond(ring, cornerIdx)) type = "diamond";
+    else type = "rect";
 
     // Enforce a minimum size, growing outward from the sketch's center.
     const w = Math.max(bounds.w, RECOG.MIN_NODE_W);
     const h = Math.max(bounds.h, RECOG.MIN_NODE_H);
     const cx = bounds.x + bounds.w / 2;
     const cy = bounds.y + bounds.h / 2;
-    return {
-      kind: "node",
-      type: isEllipse ? "ellipse" : "rect",
-      x: cx - w / 2,
-      y: cy - h / 2,
-      w,
-      h,
-    };
+    return { kind: "node", type, x: cx - w / 2, y: cy - h / 2, w, h };
   }
 
   const straightness = gap / len;

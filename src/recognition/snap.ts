@@ -34,7 +34,8 @@ export function snapEnd(p: Point, nodes: readonly DiagramNode[]): EdgeEnd {
 
 /**
  * Where the ray from a node's center toward `target` crosses the node border.
- * Rectangles clip against the AABB; ellipses against the parametric boundary.
+ * Rectangles (and text boxes) clip against the AABB, ellipses against the
+ * parametric boundary, diamonds against the rhombus (a scaled L1 ball).
  */
 export function borderPoint(node: DiagramNode, target: Point): Point {
   const c = nodeCenter(node);
@@ -46,12 +47,64 @@ export function borderPoint(node: DiagramNode, target: Point): Point {
   let t: number;
   if (node.type === "ellipse") {
     t = 1 / Math.sqrt((dx / hw) ** 2 + (dy / hh) ** 2);
+  } else if (node.type === "diamond") {
+    t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
   } else {
     const tx = dx === 0 ? Infinity : hw / Math.abs(dx);
     const ty = dy === 0 ? Infinity : hh / Math.abs(dy);
     t = Math.min(tx, ty);
   }
   return { x: c.x + t * dx, y: c.y + t * dy };
+}
+
+export const ALIGN_TOLERANCE = 6;
+
+export interface AlignedPosition {
+  x: number;
+  y: number;
+  /** Scene-x of a matched vertical center line, if the node snapped to one. */
+  guideX: number | null;
+  /** Scene-y of a matched horizontal center line, if the node snapped to one. */
+  guideY: number | null;
+}
+
+/**
+ * Center-alignment snapping for drags: if the moving node's center comes
+ * within ALIGN_TOLERANCE of another node's center on either axis, snap to it
+ * and report the guide line so the canvas can draw it.
+ */
+export function snapToAlignment(
+  nodes: readonly DiagramNode[],
+  movingId: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): AlignedPosition {
+  let cx = x + w / 2;
+  let cy = y + h / 2;
+  let guideX: number | null = null;
+  let guideY: number | null = null;
+  let bestDx = ALIGN_TOLERANCE;
+  let bestDy = ALIGN_TOLERANCE;
+  for (const n of nodes) {
+    if (n.id === movingId) continue;
+    const ocx = n.x + n.w / 2;
+    const ocy = n.y + n.h / 2;
+    const dx = Math.abs(ocx - cx);
+    const dy = Math.abs(ocy - cy);
+    if (dx < bestDx) {
+      bestDx = dx;
+      guideX = ocx;
+    }
+    if (dy < bestDy) {
+      bestDy = dy;
+      guideY = ocy;
+    }
+  }
+  if (guideX !== null) cx = guideX;
+  if (guideY !== null) cy = guideY;
+  return { x: cx - w / 2, y: cy - h / 2, guideX, guideY };
 }
 
 export interface RoutedEdge {
