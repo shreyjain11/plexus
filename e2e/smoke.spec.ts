@@ -173,7 +173,10 @@ test("text tool places a text box and commits a label", async ({ page }) => {
 test("an empty text box is discarded instead of leaving invisible junk", async ({ page }) => {
   await page.getByTitle(/Text \(T\)/).click();
   await page.mouse.click(520, 300);
-  await expect(page.locator(".label-editor")).toBeVisible();
+  // Wait for focus, not just visibility — the editor focuses itself a tick
+  // after mounting, and an Escape that lands before focus would go to the
+  // window instead of the editor.
+  await expect(page.locator(".label-editor")).toBeFocused();
   await page.keyboard.press("Escape"); // committed nothing
   await expect(page.locator(".node--text")).toHaveCount(0);
 });
