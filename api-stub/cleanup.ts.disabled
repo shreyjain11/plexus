@@ -1,0 +1,55 @@
+/**
+ * ────────────────────────────────────────────────────────────────────────────
+ *  DISABLED STUB — NOT WIRED UP. NOT DEPLOYED. NO KEY LIVES IN v1.
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ *  Plexus v1 is 100% client-side: recognition, editing, and export all run in
+ *  the browser, and there are no API keys anywhere. This file is a deliberately
+ *  inert placeholder showing WHERE a future, optional server-side "cleanup"
+ *  route would go — for example, sending a recognized diagram to an LLM to
+ *  suggest tidier labels or auto-layout — WITHOUT ever exposing a secret to the
+ *  client.
+ *
+ *  To make it real, you would:
+ *    1. Rename this file to `api/cleanup.ts` (Vercel treats files under `api/`
+ *       as serverless functions).
+ *    2. Add the key in the Vercel dashboard as an Environment Variable, e.g.
+ *       `CLEANUP_API_KEY`. It stays server-side; it is NEVER shipped in the
+ *       bundle and NEVER prefixed with VITE_ (which would inline it client-side).
+ *    3. Uncomment and adapt the handler below.
+ *
+ *  Everything past this point is commented out on purpose so the file cannot be
+ *  imported or executed by mistake.
+ *
+ * ----------------------------------------------------------------------------
+ *
+ *  // export const config = { runtime: "nodejs" };
+ *
+ *  // interface CleanupRequest {
+ *  //   nodes: Array<{ id: string; type: "rect" | "ellipse"; label: string }>;
+ *  //   edges: Array<{ from: string; to: string }>;
+ *  // }
+ *
+ *  // export default async function handler(req: Request): Promise<Response> {
+ *  //   if (req.method !== "POST") {
+ *  //     return new Response("Method Not Allowed", { status: 405 });
+ *  //   }
+ *  //
+ *  //   // Key is read from the server environment only — never sent to the client.
+ *  //   const apiKey = process.env.CLEANUP_API_KEY;
+ *  //   if (!apiKey) {
+ *  //     return new Response("Cleanup service not configured", { status: 501 });
+ *  //   }
+ *  //
+ *  //   const diagram = (await req.json()) as CleanupRequest;
+ *  //
+ *  //   // ... call an LLM / layout service with `apiKey`, transform `diagram`,
+ *  //   //     and return the tidied structure as JSON ...
+ *  //
+ *  //   return new Response(JSON.stringify({ nodes: diagram.nodes, edges: diagram.edges }), {
+ *  //     headers: { "content-type": "application/json" },
+ *  //   });
+ *  // }
+ */
+
+export {};
