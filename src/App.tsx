@@ -2,8 +2,10 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Canvas, type Mode } from "./components/Canvas";
 import { Toolbar } from "./components/Toolbar";
 import { Hud, type HudReadout } from "./components/Hud";
+import { CameraPanel } from "./components/CameraPanel";
 import { docReducer, initialDocState } from "./state/doc";
 import { useStrokeInput, type RecognitionEvent } from "./input/useStrokeInput";
+import { useHandTracking } from "./input/useHandTracking";
 import { downloadSvg } from "./export/svg";
 import { downloadPng } from "./export/png";
 import { usePrefersReducedMotion } from "./input/usePrefersReducedMotion";
@@ -72,6 +74,9 @@ export function App() {
   );
 
   const input = useStrokeInput({ dispatch, nodesRef, arrowRef, onResult });
+
+  const stageRef = useRef<HTMLElement | null>(null);
+  const hand = useHandTracking({ input, mode, stageRef });
 
   const exportSvg = useCallback(() => downloadSvg(state.doc), [state.doc]);
   const exportPng = useCallback(() => void downloadPng(state.doc), [state.doc]);
@@ -143,9 +148,11 @@ export function App() {
         />
 
         <div className="rail__spacer" />
+
+        <CameraPanel hand={hand} />
       </aside>
 
-      <main className="stage">
+      <main className="stage" ref={stageRef}>
         <Canvas
           doc={state.doc}
           selection={state.selection}
@@ -154,8 +161,8 @@ export function App() {
           dispatch={dispatch}
           ghost={ghost}
           justAddedId={justAddedId}
-          cursor={null}
-          penDown={false}
+          cursor={hand.status === "running" ? hand.cursor : null}
+          penDown={hand.penDown}
           reducedMotion={reducedMotion}
         />
         <Hud readout={readout} reducedMotion={reducedMotion} />
