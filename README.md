@@ -1,5 +1,7 @@
 # Plexus
 
+**Live:** [plexus-olive.vercel.app](https://plexus-olive.vercel.app)
+
 **Draw diagrams in the air.** Plexus turns rough, hand-drawn sketches into clean, editable vector figures — flowcharts, pathways, node/arrow diagrams. The primary input is *air-drawing*: track your hand with a webcam, pinch to draw. Mouse and touch work identically as a fallback.
 
 The signature moment is the **snap** — your rough ink resolves into a crisp rectangle, ellipse, or arrow, with a brief `recognized · …` readout. The document stays vector the whole way through, so what you export is editable, not a screenshot.
