@@ -41,6 +41,13 @@ function circlePts(cx: number, cy: number, r: number, n = 30): Pt[] {
 }
 
 test.beforeEach(async ({ page }) => {
+  // Seed the tour as completed so the guided overlay doesn't sit on top of
+  // every spec (the tour test uses its own fresh context), and pin the theme
+  // to light — but only when unset, so theme-persistence tests still work.
+  await page.addInitScript(() => {
+    localStorage.setItem("plexus.tour.v3", "done");
+    if (!localStorage.getItem("plexus.theme")) localStorage.setItem("plexus.theme", "light");
+  });
   await page.goto("/");
   await expect(page.locator(".canvas")).toBeVisible();
 });
@@ -117,7 +124,7 @@ test("a stroke that starts and ends inside one node is rejected, not a phantom e
 
 test("exports a standalone, valid SVG with shapes and an arrow marker", async ({ page }) => {
   await page.getByRole("button", { name: /Sample/ }).click();
-  await expect(page.locator(".node__shape")).toHaveCount(4);
+  await expect(page.locator(".node__shape")).toHaveCount(6);
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -133,11 +140,14 @@ test("exports a standalone, valid SVG with shapes and an arrow marker", async ({
   expect(svg).toContain("<marker");
   expect(svg).toContain("<rect");
   expect(svg).toContain("<ellipse");
+  expect(svg).toContain("<polygon"); // diamond + hexagon
+  expect(svg).toContain("<path"); // cylinder silhouette (and arrow marker)
 
   // Confirm it actually parses/renders as a standalone document.
   await page.goto("data:image/svg+xml," + encodeURIComponent(svg));
-  await expect(page.locator("ellipse")).toHaveCount(2);
-  await expect(page.locator("line")).toHaveCount(4);
+  await expect(page.locator("ellipse")).toHaveCount(3); // 2 nodes + cylinder lid
+  await expect(page.locator("polygon")).toHaveCount(2); // diamond + hexagon
+  await expect(page.locator("line")).toHaveCount(6);
 });
 
 // ---------------------------------------------------------------------------
@@ -251,7 +261,7 @@ test("autosave restores the diagram after a reload", async ({ page }) => {
 
 test("Save downloads a valid JSON doc and Open restores it", async ({ page }) => {
   await page.getByRole("button", { name: /Sample/ }).click();
-  await expect(page.locator(".node__shape")).toHaveCount(4);
+  await expect(page.locator(".node__shape")).toHaveCount(6);
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -263,9 +273,9 @@ test("Save downloads a valid JSON doc and Open restores it", async ({ page }) =>
   const json = Buffer.concat(chunks).toString("utf8");
 
   const parsed = JSON.parse(json);
-  expect(parsed.v).toBe(2);
+  expect(parsed.v).toBe(3);
   expect(Array.isArray(parsed.doc.nodes)).toBeTruthy();
-  expect(parsed.doc.nodes.length).toBe(5); // 4 shapes + 1 text box
+  expect(parsed.doc.nodes.length).toBe(7); // 6 shapes + 1 text box
 
   await page.getByTitle("Clear canvas").click();
   await expect(page.locator(".node__shape")).toHaveCount(0);
@@ -275,7 +285,7 @@ test("Save downloads a valid JSON doc and Open restores it", async ({ page }) =>
     mimeType: "application/json",
     buffer: Buffer.from(json, "utf8"),
   });
-  await expect(page.locator(".node__shape")).toHaveCount(4);
+  await expect(page.locator(".node__shape")).toHaveCount(6);
   await expect(page.locator(".node--text")).toHaveCount(1);
 });
 
@@ -323,4 +333,119 @@ test("initializes hand tracking with a fake camera without crashing", async ({ p
   }).toPass({ timeout: 30_000 });
 
   expect(pageErrors).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// v3: write mode, new shapes, guided tour, command palette, dark mode
+// ---------------------------------------------------------------------------
+
+test("write mode: hand-written strokes become typed text (H, then HI)", async ({ page }) => {
+  await page.keyboard.press("w");
+  await expect(page.locator(".status")).toContainText("WRITE");
+
+  // H — two verticals and a crossbar (stroke order deliberately human).
+  await drawStroke(page, [{ x: 500, y: 260 }, { x: 500, y: 350 }]);
+  await drawStroke(page, [{ x: 570, y: 260 }, { x: 570, y: 350 }]);
+  await drawStroke(page, [{ x: 500, y: 305 }, { x: 570, y: 305 }]);
+  // The 650ms pen-up pause commits the glyph.
+  await expect(page.locator(".node--text .node__label")).toHaveText("H", { timeout: 3000 });
+
+  // I — a single vertical close enough to append, not to start a new word.
+  await drawStroke(page, [{ x: 605, y: 260 }, { x: 605, y: 350 }]);
+  await expect(page.locator(".node--text .node__label")).toHaveText("HI", { timeout: 3000 });
+});
+
+test("write mode rejects a scribble with a HUD hint instead of typing junk", async ({ page }) => {
+  await page.keyboard.press("w");
+  const pts: Pt[] = [];
+  for (let i = 0; i <= 40; i++) {
+    const t = i / 40;
+    pts.push({ x: 480 + t * 120 + 40 * Math.sin(t * 29), y: 300 + 50 * Math.sin(t * 23) });
+  }
+  await drawStroke(page, pts);
+  await expect(page.locator(".hud__value")).toHaveText("NOT A LETTER", { timeout: 3000 });
+  await expect(page.locator(".node--text")).toHaveCount(0);
+});
+
+test("palette inserts triangle, hexagon, parallelogram, and cylinder", async ({ page }) => {
+  await page.getByTitle(/Insert triangle/).click();
+  await page.getByTitle(/Insert hexagon/).click();
+  await page.getByTitle(/Insert parallelogram/).click();
+  await page.getByTitle(/Insert cylinder/).click();
+  await expect(page.locator(".node--triangle polygon.node__shape")).toHaveCount(1);
+  await expect(page.locator(".node--hexagon polygon.node__shape")).toHaveCount(1);
+  await expect(page.locator(".node--parallelogram polygon.node__shape")).toHaveCount(1);
+  await expect(page.locator(".node--cylinder path.node__shape")).toHaveCount(1);
+  await expect(page.locator(".node--cylinder .node__lid")).toHaveCount(1);
+});
+
+test("drawing a triangle recognizes it as a triangle node", async ({ page }) => {
+  const pts: Pt[] = [];
+  const verts = [
+    { x: 560, y: 200 },
+    { x: 700, y: 420 },
+    { x: 420, y: 420 },
+  ];
+  for (let e = 0; e < 3; e++) {
+    const a = verts[e]!;
+    const b = verts[(e + 1) % 3]!;
+    for (let i = 0; i < 12; i++) {
+      pts.push({ x: a.x + ((b.x - a.x) * i) / 12, y: a.y + ((b.y - a.y) * i) / 12 });
+    }
+  }
+  pts.push({ x: verts[0]!.x + 4, y: verts[0]!.y + 4 });
+  await drawStroke(page, pts);
+  await expect(page.locator(".node--triangle polygon.node__shape")).toHaveCount(1);
+});
+
+test("first-run guided tour advances on a real draw, and skip persists", async ({ browser }) => {
+  // A genuinely fresh context: no seeded storage, so this IS the first run.
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await expect(page.locator(".canvas")).toBeVisible();
+
+  // Welcome card, then start.
+  const card = page.locator(".tour-card");
+  await expect(card).toBeVisible();
+  await page.getByRole("button", { name: "Start the tour" }).click();
+  await expect(card).toContainText("Draw a box");
+
+  // Doing the action for real advances the tour by itself.
+  await drawStroke(page, rectPts(500, 240, 190, 130));
+  await expect(card).toContainText("Link two shapes", { timeout: 4000 });
+
+  await page.getByRole("button", { name: "End tour" }).click();
+  await expect(card).toHaveCount(0);
+
+  // "Done" persisted: a reload keeps the tour away.
+  await page.reload();
+  await expect(page.locator(".canvas")).toBeVisible();
+  await expect(page.locator(".tour-card")).toHaveCount(0);
+  await ctx.close();
+});
+
+test("⌘K command palette fuzzy-runs an action", async ({ page }) => {
+  await page.keyboard.press(`${MOD}+k`);
+  const input = page.locator(".palette__input");
+  await expect(input).toBeVisible();
+  await input.fill("insert rect");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".palette")).toHaveCount(0);
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(1);
+
+  // Esc closes without running anything.
+  await page.keyboard.press(`${MOD}+k`);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".palette")).toHaveCount(0);
+});
+
+test("theme toggle flips to dark and survives a reload", async ({ page }) => {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.locator(".theme-toggle").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.reload();
+  await expect(page.locator(".canvas")).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
