@@ -29,6 +29,8 @@ export interface StrokeInput {
   extend: (p: Point) => void;
   end: () => void;
   cancel: () => void;
+  /** Drop the last `n` points (release-jerk trimming for hand input). */
+  trimTail: (n: number) => void;
 }
 
 /**
@@ -58,6 +60,14 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
   const cancel = useCallback(() => {
     ref.current = null;
     setLive(null);
+  }, []);
+
+  const trimTail = useCallback((n: number) => {
+    const cur = ref.current;
+    if (!cur || n <= 0) return;
+    // Never trim a stroke away entirely — keep at least two points.
+    cur.length = Math.max(2, cur.length - n);
+    setLive([...cur]);
   }, []);
 
   const end = useCallback(() => {
@@ -103,5 +113,5 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
     onResult({ recognition, addedId, stroke });
   }, [dispatch, nodesRef, arrowRef, onResult]);
 
-  return { live, begin, extend, end, cancel };
+  return { live, begin, extend, end, cancel, trimTail };
 }

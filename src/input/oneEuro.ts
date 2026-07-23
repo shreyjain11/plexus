@@ -50,6 +50,10 @@ class OneEuroScalar {
 
   constructor(private cfg: OneEuroConfig) {}
 
+  updateConfig(cfg: Partial<OneEuroConfig>): void {
+    this.cfg = { ...this.cfg, ...cfg };
+  }
+
   private alpha(cutoff: number, dt: number): number {
     const tau = 1 / (2 * Math.PI * cutoff);
     return 1 / (1 + tau / dt);
@@ -81,6 +85,12 @@ export class OneEuroPoint {
   constructor(cfg: OneEuroConfig) {
     this.fx = new OneEuroScalar(cfg);
     this.fy = new OneEuroScalar(cfg);
+  }
+
+  /** Retune on the fly (e.g. steadier smoothing while the pen is down). */
+  updateConfig(cfg: Partial<OneEuroConfig>): void {
+    this.fx.updateConfig(cfg);
+    this.fy.updateConfig(cfg);
   }
 
   filter(x: number, y: number, timestampMs: number): { x: number; y: number } {
