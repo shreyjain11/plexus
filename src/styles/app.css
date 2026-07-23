@@ -14,6 +14,8 @@ body {
   color: var(--ink);
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
 }
 
 .app {
@@ -21,7 +23,537 @@ body {
   display: flex;
 }
 
+/* ---------- Tool rail ---------- */
+.rail {
+  width: 224px;
+  flex: none;
+  background: var(--rail);
+  color: var(--rail-text);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--rail-line);
+  z-index: 3;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--rail-text);
+  padding: 2px 4px 10px;
+  border-bottom: 1px solid var(--rail-line);
+}
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-m);
+  background: var(--rail-raised);
+  color: var(--rail-text);
+}
+.brand__word {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+}
+.brand__word small {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+  margin-top: 3px;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.toolbar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rail-line);
+}
+.toolbar__group:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.06s ease;
+}
+.tool:hover:not(:disabled) {
+  background: var(--rail-raised);
+}
+.tool:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.tool:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.tool--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.tool--active:hover {
+  background: var(--accent);
+}
+.tool--on {
+  color: #fff;
+  border-color: var(--rail-line);
+  background: var(--rail-raised);
+}
+.tool--accent {
+  color: var(--accent);
+}
+.tool--accent:hover {
+  background: var(--accent-soft);
+}
+.tool__label {
+  flex: 1;
+  text-align: left;
+}
+.tool__key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--rail-text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--rail-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.tool--active .tool__key {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.rail__spacer {
+  flex: 1;
+}
+
+/* ---------- Stage + canvas ---------- */
 .stage {
+  position: relative;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.canvas--draw {
+  cursor: crosshair;
+}
+.canvas--select {
+  cursor: default;
+}
+.canvas__bg {
+  pointer-events: all;
+}
+
+/* Nodes */
+.node {
+  cursor: inherit;
+}
+.canvas--select .node {
+  cursor: grab;
+}
+.node__shape {
+  fill: var(--node-fill);
+  stroke: var(--ink);
+  stroke-width: 2;
+  transition: stroke 0.12s ease;
+}
+.node--selected .node__shape {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.node__label {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  fill: var(--ink);
+  pointer-events: none;
+  user-select: none;
+}
+.node--snap .node__shape {
+  animation: snap-in 0.42s var(--ease-snap);
+}
+
+/* Edges */
+.edge__line {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 0.12s ease;
+}
+.edge__hit {
+  stroke: transparent;
+  stroke-width: 16;
+  fill: none;
+}
+.canvas--select .edge {
+  cursor: pointer;
+}
+.edge--selected .edge__line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.edge--snap .edge__line {
+  animation: draw-in 0.42s var(--ease-snap);
+}
+
+/* Strokes */
+.stroke-live {
+  stroke: var(--accent-strong);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.stroke-ghost {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: ghost-out var(--ghost-ms, 240ms) ease forwards;
+}
+
+/* Hand cursor reticle */
+.reticle {
+  pointer-events: none;
+}
+.reticle__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.55;
+  transition:
+    r 0.09s ease,
+    opacity 0.09s ease;
+}
+.reticle__ring--down {
+  fill: var(--accent-soft);
+  opacity: 0.95;
+}
+.reticle__dot {
+  fill: var(--accent);
+}
+
+/* Inline label editor */
+.label-editor {
+  width: 100%;
+  height: 32px;
+  border: 1.5px solid var(--accent);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-align: center;
+  padding: 0 6px;
+  outline: none;
+  box-shadow: var(--shadow-panel);
+}
+
+/* ---------- HUD readout ---------- */
+.hud {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 4;
+}
+.hud__chip {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--rail);
+  color: var(--rail-text);
+  box-shadow: var(--shadow-panel);
+  border: 1px solid var(--rail-line);
+}
+.hud__chip--warn {
+  background: #2a2018;
+  border-color: #4a3620;
+}
+.hud__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.hud__chip--warn .hud__eyebrow {
+  color: var(--warn);
+}
+.hud__value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+.hud__chip--flash {
+  animation: hud-pop 0.3s var(--ease-snap);
+}
+
+/* ---------- Camera panel ---------- */
+.camera {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rail-line);
+}
+.camera__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.camera__enable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px dashed var(--rail-line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
+}
+.camera__enable:hover {
+  background: var(--rail-raised);
+  border-color: var(--accent);
+}
+.camera__stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: #0d0f13;
+  border: 1px solid var(--rail-line);
+}
+.camera__video,
+.camera__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1); /* mirror for natural interaction */
+}
+.camera__video {
+  object-fit: cover;
+}
+.camera__pill {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(13, 15, 19, 0.82);
+  color: var(--rail-text);
+  border: 1px solid var(--rail-line);
+}
+.camera__pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rail-text-dim);
+}
+.camera__pill-dot--down {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.camera__note {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--rail-text-dim);
+}
+.camera__note--warn {
+  color: #d79a6a;
+}
+.camera__disable {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--rail-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.camera__disable:hover {
+  color: var(--rail-text);
+}
+
+/* ---------- Focus, motion, responsive ---------- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.canvas:focus-visible {
+  outline-offset: -2px;
+}
+
+@keyframes snap-in {
+  0% {
+    opacity: 0.2;
+    transform: scale(0.92);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  60% {
+    transform: scale(1.03);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+}
+@keyframes draw-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ghost-out {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes hud-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Narrow screens: rail becomes a horizontal bar along the bottom. */
+@media (max-width: 720px) {
+  .app {
+    flex-direction: column-reverse;
+  }
+  .rail {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    overflow-x: auto;
+    border-right: none;
+    border-top: 1px solid var(--rail-line);
+  }
+  .brand,
+  .rail__spacer,
+  .camera__stage {
+    display: none;
+  }
+  .toolbar {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .toolbar__group {
+    flex-direction: row;
+    padding-bottom: 0;
+    border-bottom: none;
+    border-right: 1px solid var(--rail-line);
+    padding-right: 10px;
+  }
+  .tool__label,
+  .tool__key {
+    display: none;
+  }
+  .tool {
+    padding: 10px;
+  }
+  .camera {
+    flex-direction: row;
+    border-top: none;
+    padding-top: 0;
+  }
+  .camera__head,
+  .camera__note {
+    display: none;
+  }
 }
