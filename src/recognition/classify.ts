@@ -5,7 +5,8 @@ import { rdpIndices } from "../geometry/rdp";
 export type Recognition =
   | { kind: "node"; type: NodeType; x: number; y: number; w: number; h: number }
   | { kind: "edge"; from: Point; to: Point }
-  | { kind: "reject"; reason: "too-small" | "too-curly" };
+  /** "self-edge" is issued downstream when both snapped ends hit one node. */
+  | { kind: "reject"; reason: "too-small" | "too-curly" | "self-edge" };
 
 export const RECOG = {
   /** Strokes below these are treated as accidental taps/noise. */

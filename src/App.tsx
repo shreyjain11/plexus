@@ -26,6 +26,9 @@ function readoutFor(ev: RecognitionEvent, arrow: boolean): HudReadout | null {
   if (rec.reason === "too-curly") {
     return { label: "NO CLEAN SHAPE", tone: "warn", nonce: 0 };
   }
+  if (rec.reason === "self-edge") {
+    return { label: "SELF-LOOP SKIPPED", tone: "warn", nonce: 0 };
+  }
   return null; // ignore accidental taps silently
 }
 
@@ -55,9 +58,12 @@ export function App() {
       const r = readoutFor(ev, arrowRef.current ?? true);
       if (r) {
         nonce.current += 1;
-        setReadout({ ...r, nonce: nonce.current });
+        // Capture this readout's own nonce: a previous stroke's expiring
+        // timer must never clear a newer readout early.
+        const myNonce = nonce.current;
+        setReadout({ ...r, nonce: myNonce });
         const t = window.setTimeout(() => {
-          setReadout((cur) => (cur && cur.nonce === nonce.current ? null : cur));
+          setReadout((cur) => (cur && cur.nonce === myNonce ? null : cur));
         }, READOUT_MS);
         timers.current.push(t);
       }
@@ -65,7 +71,7 @@ export function App() {
         setJustAddedId(ev.addedId);
         setGhost(ev.stroke);
         timers.current.push(
-          window.setTimeout(() => setGhost(null), GHOST_MS),
+          window.setTimeout(() => setGhost((cur) => (cur === ev.stroke ? null : cur)), GHOST_MS),
           window.setTimeout(() => setJustAddedId((cur) => (cur === ev.addedId ? null : cur)), SNAP_MS),
         );
       }
@@ -89,6 +95,7 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
 
       if (mod && e.key.toLowerCase() === "z") {
+        if (e.shiftKey) return; // redo chord — there is no redo; never double-undo
         e.preventDefault();
         dispatch({ type: "undo" });
         return;

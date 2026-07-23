@@ -12,19 +12,22 @@ interface HudProps {
 
 /**
  * The recognized-as readout. Flashes briefly after each stroke resolves,
- * naming what the ink became (or that it was not recognized).
+ * naming what the ink became (or that it was not recognized). The live
+ * region stays mounted permanently — screen readers only announce changes
+ * *inside* an existing region, never a region inserted with its content.
  */
 export function Hud({ readout, reducedMotion }: HudProps) {
-  if (!readout) return null;
   return (
     <div className="hud" role="status" aria-live="polite">
-      <div
-        key={reducedMotion ? undefined : readout.nonce}
-        className={`hud__chip hud__chip--${readout.tone} ${reducedMotion ? "" : "hud__chip--flash"}`}
-      >
-        <span className="hud__eyebrow">{readout.tone === "ok" ? "recognized" : "unrecognized"}</span>
-        <span className="hud__value">{readout.label}</span>
-      </div>
+      {readout && (
+        <div
+          key={reducedMotion ? undefined : readout.nonce}
+          className={`hud__chip hud__chip--${readout.tone} ${reducedMotion ? "" : "hud__chip--flash"}`}
+        >
+          <span className="hud__eyebrow">{readout.tone === "ok" ? "recognized" : "unrecognized"}</span>
+          <span className="hud__value">{readout.label}</span>
+        </div>
+      )}
     </div>
   );
 }

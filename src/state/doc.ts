@@ -70,7 +70,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         },
       };
 
-    case "set-label":
+    case "set-label": {
+      const target = state.doc.nodes.find((n) => n.id === action.id);
+      if (!target || target.label === action.label) return state; // no-op: no undo entry
       return {
         ...state,
         past: push(state.past, state.doc),
@@ -81,8 +83,11 @@ export function docReducer(state: DocState, action: DocAction): DocState {
           ),
         },
       };
+    }
 
-    case "set-arrow":
+    case "set-arrow": {
+      const target = state.doc.edges.find((e) => e.id === action.id);
+      if (!target || target.arrow === action.arrow) return state; // no-op: no undo entry
       return {
         ...state,
         past: push(state.past, state.doc),
@@ -93,6 +98,7 @@ export function docReducer(state: DocState, action: DocAction): DocState {
           ),
         },
       };
+    }
 
     case "select":
       return { ...state, selection: action.selection };

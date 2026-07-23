@@ -68,6 +68,19 @@ export function Canvas({
     moved: boolean;
   } | null>(null);
 
+  // Manual double-press detection: pointer capture retargets derived
+  // click/dblclick events to the svg root, so native onDoubleClick on the
+  // node <g> never fires. Two quick presses on the same node open the editor.
+  const lastTap = useRef<{ id: string; t: number; x: number; y: number } | null>(null);
+
+  // A mode switch mid-gesture must not leave a stroke or drag dangling.
+  const cancelStroke = input.cancel;
+  useEffect(() => {
+    drag.current = null;
+    lastTap.current = null;
+    cancelStroke();
+  }, [mode, cancelStroke]);
+
   const nodesById = new Map(doc.nodes.map((n) => [n.id, n]));
 
   const commitLabel = useCallback(() => {
@@ -76,6 +89,10 @@ export function Canvas({
       return null;
     });
   }, [dispatch]);
+
+  const openEditor = useCallback((node: DiagramNode) => {
+    setEditing({ id: node.id, draft: node.label });
+  }, []);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -90,6 +107,7 @@ export function Canvas({
       }
 
       // Select mode: figure out what was hit via data attributes.
+      drag.current = null;
       const target = e.target as Element;
       const nodeEl = target.closest("[data-node-id]");
       const edgeEl = target.closest("[data-edge-id]");
@@ -97,7 +115,19 @@ export function Canvas({
         const id = nodeEl.getAttribute("data-node-id")!;
         const node = nodesById.get(id);
         if (node) {
+          const tap = lastTap.current;
+          const isDouble =
+            tap !== null &&
+            tap.id === id &&
+            e.timeStamp - tap.t < 400 &&
+            Math.hypot(p.x - tap.x, p.y - tap.y) < 12;
+          lastTap.current = { id, t: e.timeStamp, x: p.x, y: p.y };
           dispatch({ type: "select", selection: { kind: "node", id } });
+          if (isDouble) {
+            lastTap.current = null;
+            openEditor(node);
+            return;
+          }
           drag.current = {
             id,
             startX: p.x,
@@ -108,12 +138,14 @@ export function Canvas({
           };
         }
       } else if (edgeEl) {
+        lastTap.current = null;
         dispatch({ type: "select", selection: { kind: "edge", id: edgeEl.getAttribute("data-edge-id")! } });
       } else {
+        lastTap.current = null;
         dispatch({ type: "select", selection: null });
       }
     },
-    [editing, mode, input, toScene, dispatch, nodesById],
+    [editing, mode, input, toScene, dispatch, nodesById, openEditor],
   );
 
   const onPointerMove = useCallback(
@@ -124,6 +156,11 @@ export function Canvas({
       }
       const d = drag.current;
       if (!d) return;
+      if ((e.buttons & 1) === 0) {
+        // Button released without a pointerup reaching us — never drag on hover.
+        drag.current = null;
+        return;
+      }
       const p = toScene(e.clientX, e.clientY);
       if (!d.moved && Math.hypot(p.x - d.startX, p.y - d.startY) < DRAG_THRESHOLD) return;
       if (!d.moved) {
@@ -140,18 +177,27 @@ export function Canvas({
       if (svgRef.current?.hasPointerCapture(e.pointerId)) {
         svgRef.current.releasePointerCapture(e.pointerId);
       }
-      if (mode === "draw") {
-        if (input.live) input.end();
-      } else {
-        drag.current = null;
+      drag.current = null;
+      if (input.live) {
+        if (mode === "draw") input.end();
+        else input.cancel();
       }
     },
     [mode, input],
   );
 
-  const openEditor = useCallback((node: DiagramNode) => {
-    setEditing({ id: node.id, draft: node.label });
-  }, []);
+  // pointercancel (palm rejection, browser gesture, system overlay) must
+  // discard the interrupted stroke, never run recognition on half of it.
+  const cancelPointer = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      if (svgRef.current?.hasPointerCapture(e.pointerId)) {
+        svgRef.current.releasePointerCapture(e.pointerId);
+      }
+      drag.current = null;
+      input.cancel();
+    },
+    [input],
+  );
 
   const strokePath = (pts: readonly Point[]): string =>
     pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
@@ -169,7 +215,7 @@ export function Canvas({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endPointer}
-      onPointerCancel={endPointer}
+      onPointerCancel={cancelPointer}
     >
       <defs>
         <pattern id="plexus-dots" width={dotScale} height={dotScale} patternUnits="userSpaceOnUse">
@@ -211,7 +257,6 @@ export function Canvas({
             selected={selection?.kind === "node" && selection.id === node.id}
             justAdded={justAddedId === node.id && !reducedMotion}
             editing={editing?.id === node.id}
-            onOpenEditor={openEditor}
           />
         ))}
       </g>
@@ -252,26 +297,20 @@ function NodeView({
   selected,
   justAdded,
   editing,
-  onOpenEditor,
 }: {
   node: DiagramNode;
   selected: boolean;
   justAdded: boolean;
   editing: boolean;
-  onOpenEditor: (n: DiagramNode) => void;
 }) {
   const cx = node.x + node.w / 2;
   const cy = node.y + node.h / 2;
   const cls = `node ${selected ? "node--selected" : ""} ${justAdded ? "node--snap" : ""}`;
+  // Label editing opens via the double-press detection in onPointerDown —
+  // pointer capture retargets native dblclick to the svg root, so a handler
+  // here would never fire.
   return (
-    <g
-      className={cls}
-      data-node-id={node.id}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onOpenEditor(node);
-      }}
-    >
+    <g className={cls} data-node-id={node.id}>
       {node.type === "ellipse" ? (
         <ellipse className="node__shape" cx={cx} cy={cy} rx={node.w / 2} ry={node.h / 2} />
       ) : (

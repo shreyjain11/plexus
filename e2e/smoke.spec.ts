@@ -83,6 +83,38 @@ test("connects two boxes with an arrow that survives dragging a node", async ({ 
   await expect(page.locator(".node rect.node__shape")).toHaveCount(2);
 });
 
+test("double-click opens the inline label editor and commits on Enter", async ({ page }) => {
+  await drawStroke(page, rectPts(400, 240, 180, 120)); // center ~ (490,300)
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(1);
+
+  await page.keyboard.press("v");
+  await page.mouse.dblclick(490, 300);
+  const editor = page.locator(".label-editor");
+  await expect(editor).toBeVisible();
+  await editor.fill("KINASE");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".node__label")).toHaveText("KINASE");
+});
+
+test("a stroke that starts and ends inside one node is rejected, not a phantom edge", async ({ page }) => {
+  await drawStroke(page, rectPts(380, 240, 220, 140)); // center ~ (490,310)
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(1);
+
+  // Straight line entirely within the node → both ends snap to it.
+  await drawStroke(page, [
+    { x: 430, y: 310 },
+    { x: 470, y: 310 },
+    { x: 510, y: 310 },
+    { x: 550, y: 310 },
+  ]);
+  await expect(page.locator(".hud__value")).toHaveText("SELF-LOOP SKIPPED");
+  await expect(page.locator(".edge__line")).toHaveCount(0);
+
+  // And undo must revert the node draw, not a phantom edge.
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+z" : "Control+z");
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(0);
+});
+
 test("exports a standalone, valid SVG with shapes and an arrow marker", async ({ page }) => {
   await page.getByRole("button", { name: /Sample/ }).click();
   await expect(page.locator(".node__shape")).toHaveCount(4);

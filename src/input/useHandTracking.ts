@@ -82,6 +82,10 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
+  /** Bumped by every enable() and disable(); an in-flight enable() whose
+   * token no longer matches must clean up its partial work and bail, never
+   * restart the loop after a disable/unmount happened mid-await. */
+  const sessionRef = useRef(0);
   const filterRef = useRef(new OneEuroPoint(FILTER));
   const lastVideoTimeRef = useRef(-1);
   const pinchedRef = useRef(false);
@@ -200,6 +204,7 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
   }, [onFrame]);
 
   const disable = useCallback(() => {
+    sessionRef.current += 1;
     runningRef.current = false;
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
@@ -228,6 +233,7 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
     }
     setStatus("loading");
     setErrorMessage(null);
+    const session = ++sessionRef.current;
 
     let stream: MediaStream;
     try {
@@ -250,6 +256,11 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
       return;
     }
 
+    if (sessionRef.current !== session) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
     streamRef.current = stream;
     const video = videoRef.current;
     if (!video) {
@@ -264,17 +275,18 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
       /* autoplay policies vary; muted+playsInline video usually still plays */
     }
 
+    let landmarker: HandLandmarker;
     try {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL);
       try {
-        landmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+        landmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
           runningMode: "VIDEO",
           numHands: 1,
         });
       } catch {
         // Some browsers/GPUs reject the WebGL delegate — fall back to CPU.
-        landmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+        landmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
           runningMode: "VIDEO",
           numHands: 1,
@@ -282,13 +294,24 @@ export function useHandTracking({ input, mode, stageRef }: Options): HandTrackin
       }
     } catch {
       stream.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+      if (streamRef.current === stream) streamRef.current = null;
       video.srcObject = null;
-      setStatus("error");
-      setErrorMessage("Could not load the hand-tracking model (offline?).");
+      if (sessionRef.current === session) {
+        setStatus("error");
+        setErrorMessage("Could not load the hand-tracking model (offline?).");
+      }
       return;
     }
 
+    if (sessionRef.current !== session) {
+      landmarker.close();
+      stream.getTracks().forEach((t) => t.stop());
+      if (streamRef.current === stream) streamRef.current = null;
+      video.srcObject = null;
+      return;
+    }
+
+    landmarkerRef.current = landmarker;
     runningRef.current = true;
     filterRef.current.reset();
     setStatus("running");

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type { DiagramNode, Point } from "../types";
+import { isNodeRef, type DiagramNode, type Point } from "../types";
 import type { DocAction } from "../state/doc";
 import { classifyStroke, type Recognition } from "../recognition/classify";
 import { snapEnd } from "../recognition/snap";
@@ -66,7 +66,7 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
     setLive(null);
     if (!stroke || stroke.length < 2) return;
 
-    const recognition = classifyStroke(stroke);
+    let recognition = classifyStroke(stroke);
     let addedId: string | null = null;
 
     if (recognition.kind === "node") {
@@ -87,11 +87,17 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
       const nodes = nodesRef.current ?? [];
       const from = snapEnd(recognition.from, nodes);
       const to = snapEnd(recognition.to, nodes);
-      addedId = uid("e");
-      dispatch({
-        type: "add-edge",
-        edge: { id: addedId, from, to, arrow: arrowRef.current ?? true },
-      });
+      if (isNodeRef(from) && isNodeRef(to) && from.node === to.node) {
+        // Both ends inside one node: a self-loop would render as nothing and
+        // silently pollute the doc/undo history — reject it visibly instead.
+        recognition = { kind: "reject", reason: "self-edge" };
+      } else {
+        addedId = uid("e");
+        dispatch({
+          type: "add-edge",
+          edge: { id: addedId, from, to, arrow: arrowRef.current ?? true },
+        });
+      }
     }
 
     onResult({ recognition, addedId, stroke });
