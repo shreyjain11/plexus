@@ -145,3 +145,61 @@ export const HandIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M8 12v-1a1.5 1.5 0 0 0-3 0v3a6 6 0 0 0 6 6h1a6 6 0 0 0 6-6" />
   </svg>
 );
+
+export const WriteIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M4 16c2-6 4-9 5-9s-1 10 0 10 2.5-5 3.5-5 .5 5 1.5 5 2-3 6-3" />
+    <path d="M4 20h16" strokeDasharray="2.5 2.5" />
+  </svg>
+);
+
+export const TriangleIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M12 5l8 14H4l8-14z" />
+  </svg>
+);
+
+export const HexagonIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M8 5h8l4 7-4 7H8l-4-7 4-7z" />
+  </svg>
+);
+
+export const ParallelogramIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M8.5 6H21l-5.5 12H3L8.5 6z" />
+  </svg>
+);
+
+export const CylinderIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <ellipse cx="12" cy="6" rx="7" ry="2.6" />
+    <path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6" />
+  </svg>
+);
+
+export const SunIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
+  </svg>
+);
+
+export const MoonIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />
+  </svg>
+);
+
+export const CommandIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 9V6a3 3 0 1 0-3 3h3zm0 0v6m0-6h6m-6 6H6a3 3 0 1 0 3 3v-3zm6-6V6a3 3 0 1 1 3 3h-3zm0 0v6m0 0h3a3 3 0 1 1-3 3v-3z" />
+  </svg>
+);
+
+export const ReplayIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M4 5v5h5" />
+    <path d="M4.6 13a8 8 0 1 0 1.7-6L4 10" />
+  </svg>
+);

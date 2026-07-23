@@ -4,9 +4,10 @@ import { minSizeFor } from "../types";
 import type { DocAction, Selection } from "../state/doc";
 import type { StrokeInput } from "../input/useStrokeInput";
 import { routeEdge, snapToAlignment } from "../recognition/snap";
+import { cylinderCapRy, cylinderPath, shapePoints } from "../geometry/shapes";
 import { uid } from "../state/uid";
 
-export type Mode = "draw" | "select" | "text";
+export type Mode = "draw" | "select" | "text" | "write";
 
 export interface ViewState {
   /** Scene coordinate at the viewport's top-left. */
@@ -27,8 +28,9 @@ export interface FramePreview {
   h: number;
 }
 
+/** "" = auto: no stored fill, so the node follows the theme's --node-fill. */
 export const FILL_SWATCHES = [
-  "#ffffff",
+  "",
   "#eef2fb",
   "#e8f1ec",
   "#fdf2e7",
@@ -43,7 +45,12 @@ interface CanvasProps {
   mode: Mode;
   input: StrokeInput;
   dispatch: React.Dispatch<DocAction>;
-  ghost: readonly Point[] | null;
+  /** Raw ink fading out as recognized content snaps in (one path per stroke). */
+  ghost: ReadonlyArray<readonly Point[]> | null;
+  /** Write mode: pen-up strokes of the glyph awaiting its commit pause. */
+  writeBuffer: ReadonlyArray<readonly Point[]>;
+  /** Write mode: dashed baseline under the active composition. */
+  writeGuide: { x1: number; x2: number; y: number } | null;
   justAddedId: string | null;
   cursor: Point | null;
   cursor2: Point | null;
@@ -83,6 +90,8 @@ export function Canvas({
   input,
   dispatch,
   ghost,
+  writeBuffer,
+  writeGuide,
   justAddedId,
   cursor,
   cursor2,
@@ -278,7 +287,7 @@ export function Canvas({
 
       const p = toScene(e.clientX, e.clientY);
 
-      if (mode === "draw") {
+      if (mode === "draw" || mode === "write") {
         input.begin(p);
         return;
       }
@@ -418,7 +427,7 @@ export function Canvas({
         return;
       }
 
-      if (mode === "draw") {
+      if (mode === "draw" || mode === "write") {
         if (input.live) input.extend(toScene(e.clientX, e.clientY));
         return;
       }
@@ -504,7 +513,7 @@ export function Canvas({
       resize.current = null;
       setGuides({ gx: null, gy: null });
       if (input.live && !wasPinching) {
-        if (mode === "draw") input.end();
+        if (mode === "draw" || mode === "write") input.end();
         else input.cancel();
       }
     },
@@ -539,7 +548,7 @@ export function Canvas({
 
   const cursorClass = spaceHeld
     ? "canvas--pan"
-    : mode === "draw"
+    : mode === "draw" || mode === "write"
       ? "canvas--draw"
       : mode === "text"
         ? "canvas--text"
@@ -629,8 +638,28 @@ export function Canvas({
         <ResizeHandles node={selectedNode} zoom={view.z} />
       )}
 
-      {/* Ghost: the raw stroke fading out as the clean shape snaps in. */}
-      {ghost && !reducedMotion && <path className="stroke-ghost" d={strokePath(ghost)} fill="none" />}
+      {/* Ghost: the raw ink fading out as the clean content snaps in. */}
+      {ghost &&
+        !reducedMotion &&
+        ghost.map((s, i) => (
+          <path key={i} className="stroke-ghost" d={strokePath(s)} fill="none" />
+        ))}
+
+      {/* Write mode: baseline guide + buffered glyph strokes awaiting commit. */}
+      {writeGuide && (
+        <line
+          className="write-guide"
+          x1={writeGuide.x1}
+          y1={writeGuide.y}
+          x2={writeGuide.x2}
+          y2={writeGuide.y}
+          strokeWidth={hairline}
+          strokeDasharray={`${5 / view.z} ${4 / view.z}`}
+        />
+      )}
+      {writeBuffer.map((s, i) => (
+        <path key={i} className="stroke-live stroke-live--pending" d={strokePath(s)} fill="none" />
+      ))}
 
       {/* Live in-progress stroke. */}
       {input.live && input.live.length > 0 && (
@@ -661,11 +690,14 @@ export function Canvas({
           >
             {FILL_SWATCHES.map((c) => (
               <button
-                key={c}
+                key={c || "auto"}
                 type="button"
-                className={`fills__chip ${(selectedNode.fill ?? "#ffffff") === c ? "fills__chip--on" : ""}`}
-                style={{ background: c }}
-                aria-label={`Fill ${c}`}
+                className={`fills__chip ${c === "" ? "fills__chip--auto" : ""} ${
+                  (selectedNode.fill ?? "") === c ? "fills__chip--on" : ""
+                }`}
+                style={c ? { background: c } : undefined}
+                aria-label={c ? `Fill ${c}` : "Automatic fill (follows theme)"}
+                title={c ? undefined : "Auto — follows the theme"}
                 onClick={() => dispatch({ type: "set-fill", id: selectedNode.id, fill: c })}
               />
             ))}
@@ -708,11 +740,7 @@ function edgeMidpoint(
   return { x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 };
 }
 
-function diamondPoints(x: number, y: number, w: number, h: number): string {
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  return `${cx},${y} ${x + w},${cy} ${cx},${y + h} ${x},${cy}`;
-}
+const POLYGON_TYPES: ReadonlySet<NodeType> = new Set(["diamond", "triangle", "hexagon", "parallelogram"]);
 
 function NodeView({
   node,
@@ -727,7 +755,9 @@ function NodeView({
 }) {
   const cx = node.x + node.w / 2;
   const cy = node.y + node.h / 2;
-  const fill = node.fill ?? "#ffffff";
+  // Unfilled nodes omit the attribute so CSS's var(--node-fill) applies and
+  // flips with the theme; explicit swatch fills persist as chosen.
+  const fill = node.fill;
   const cls = `node node--${node.type} ${selected ? "node--selected" : ""} ${justAdded ? "node--snap" : ""}`;
   // Label editing opens via the double-press detection in onPointerDown —
   // pointer capture retargets native dblclick to the svg root, so a handler
@@ -740,8 +770,21 @@ function NodeView({
       {node.type === "rect" && (
         <rect className="node__shape" x={node.x} y={node.y} width={node.w} height={node.h} rx={8} fill={fill} />
       )}
-      {node.type === "diamond" && (
-        <polygon className="node__shape" points={diamondPoints(node.x, node.y, node.w, node.h)} fill={fill} />
+      {POLYGON_TYPES.has(node.type) && (
+        <polygon className="node__shape" points={shapePoints(node.type, node.x, node.y, node.w, node.h)} fill={fill} />
+      )}
+      {node.type === "cylinder" && (
+        <>
+          <path className="node__shape" d={cylinderPath(node.x, node.y, node.w, node.h)} fill={fill} />
+          <ellipse
+            className="node__lid"
+            cx={cx}
+            cy={node.y + cylinderCapRy(node.w, node.h)}
+            rx={node.w / 2}
+            ry={cylinderCapRy(node.w, node.h)}
+            fill={fill}
+          />
+        </>
       )}
       {node.type === "text" && (
         <rect
@@ -754,7 +797,14 @@ function NodeView({
         />
       )}
       {!editing && node.label && (
-        <text className="node__label" x={cx} y={cy} textAnchor="middle" dominantBaseline="central">
+        <text
+          className="node__label"
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          style={node.fontSize ? { fontSize: node.fontSize } : undefined}
+        >
           {node.label}
         </text>
       )}
@@ -867,8 +917,11 @@ function FramePreviewView({ preview, zoom }: { preview: FramePreview; zoom: numb
       />
     );
   }
-  if (preview.type === "diamond") {
-    return <polygon {...common} points={diamondPoints(preview.x, preview.y, preview.w, preview.h)} />;
+  if (POLYGON_TYPES.has(preview.type)) {
+    return <polygon {...common} points={shapePoints(preview.type, preview.x, preview.y, preview.w, preview.h)} />;
+  }
+  if (preview.type === "cylinder") {
+    return <path {...common} d={cylinderPath(preview.x, preview.y, preview.w, preview.h)} />;
   }
   return <rect {...common} x={preview.x} y={preview.y} width={preview.w} height={preview.h} rx={8} />;
 }

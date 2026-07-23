@@ -71,6 +71,27 @@ body {
   color: var(--rail-text-dim);
   margin-top: 3px;
 }
+.theme-toggle {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-s);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--rail-text-dim);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s var(--ease-snap);
+}
+.theme-toggle:hover {
+  color: var(--rail-text);
+  background: var(--rail-raised);
+  transform: rotate(12deg);
+}
 
 .toolbar {
   display: flex;
@@ -199,13 +220,15 @@ body {
 .canvas--select .node {
   cursor: grab;
 }
-.node__shape {
+.node__shape,
+.node__lid {
   fill: var(--node-fill);
   stroke: var(--ink);
   stroke-width: 2;
   transition: stroke 0.12s ease;
 }
-.node--selected .node__shape {
+.node--selected .node__shape,
+.node--selected .node__lid {
   stroke: var(--accent);
   stroke-width: 2.5;
 }
@@ -305,6 +328,10 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
+/* "Auto" chip: half paper, half night — it follows the theme. */
+.fills__chip--auto {
+  background: linear-gradient(135deg, #f6f7f4 0 50%, #1d2028 50% 100%);
+}
 
 /* Edges */
 .edge__line {
@@ -352,6 +379,25 @@ body {
   animation: ghost-out var(--ghost-ms, 240ms) ease forwards;
   pointer-events: none;
 }
+/* Write mode: pen-up strokes waiting out the commit pause pulse gently so the
+   "still listening" state reads at a glance. */
+.stroke-live--pending {
+  animation: pending-pulse 1.1s ease-in-out infinite;
+}
+@keyframes pending-pulse {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.write-guide {
+  stroke: var(--accent);
+  opacity: 0.45;
+  pointer-events: none;
+}
 
 /* Hand cursor reticle */
 .reticle {
@@ -380,7 +426,7 @@ body {
   height: 32px;
   border: 1.5px solid var(--accent);
   border-radius: 5px;
-  background: #fff;
+  background: var(--node-fill);
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: 14px;
@@ -595,68 +641,178 @@ body {
   background: var(--rail-raised);
 }
 
-/* ---------- Coach + help ---------- */
-.coach {
+/* ---------- Guided tour ----------
+   The veil never blocks the canvas — every step is done for real, through it.
+   Only the instruction card takes pointer events. */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+.tour__veil {
   position: absolute;
+  inset: 0;
+}
+.tour__dim {
+  fill: rgba(10, 12, 17, 0.52);
+}
+.tour__hole--springy,
+.tour__ring--springy {
+  transition:
+    x 0.45s var(--ease-snap),
+    y 0.45s var(--ease-snap),
+    width 0.45s var(--ease-snap),
+    height 0.45s var(--ease-snap);
+}
+.tour__ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 7 5;
+  opacity: 0.9;
+}
+.tour-card {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  background: var(--rail);
+  color: var(--rail-text);
+  border: 1px solid var(--rail-line);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-panel);
+  padding: 18px 20px 16px;
+  pointer-events: auto;
+}
+.tour-card--center {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+  width: 420px;
+  text-align: left;
+}
+.tour-card__eyebrow {
   display: flex;
-  gap: 14px;
-  max-width: min(880px, calc(100% - 48px));
-  z-index: 3;
-  /* Hints never block the canvas — draw straight through them and they vanish
-     on the first shape. Only the dismiss button is interactive. */
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.tour-card__count {
+  color: var(--rail-text-dim);
+}
+.tour-card__title {
+  margin: 0 0 6px;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+.tour-card__tick {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
+  font-size: 12px;
+  vertical-align: 2px;
+  animation: tick-pop 0.3s var(--ease-snap);
+}
+@keyframes tick-pop {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.tour-card__body {
+  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--rail-text-dim);
+}
+.tour-card__rail {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rail-line);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.tour-card__rail-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s var(--ease-snap);
+}
+.tour-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tour-btn {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--rail-line);
+  background: transparent;
+  color: var(--rail-text);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
+}
+.tour-btn:hover {
+  background: var(--rail-raised);
+}
+.tour-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.tour-btn--primary:hover {
+  background: var(--accent-strong);
+}
+.tour-btn--quiet {
+  margin-left: auto;
+  border-color: transparent;
+  color: var(--rail-text-dim);
+}
+.tour-stamp {
+  position: absolute;
+  right: 7%;
+  top: 14%;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  letter-spacing: 0.3em;
+  color: var(--ok);
+  border: 3px double var(--ok);
+  border-radius: 6px;
+  padding: 10px 18px;
+  transform: rotate(-9deg);
+  opacity: 0;
+  animation: stamp-in 0.5s var(--ease-snap) 0.25s forwards;
   pointer-events: none;
 }
-.coach__card {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid var(--paper-edge);
-  border-radius: var(--radius-m);
-  padding: 16px 16px 18px;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-  backdrop-filter: blur(2px);
+@keyframes stamp-in {
+  from {
+    transform: rotate(-9deg) scale(2.1);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(-9deg) scale(1);
+    opacity: 0.9;
+  }
 }
-.coach__card strong {
-  display: block;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
-.coach__card kbd {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--paper);
-  border: 1px solid var(--paper-edge);
-  border-radius: 4px;
-  padding: 0 4px;
-}
-.coach__step {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  color: var(--accent);
-}
-.coach__close {
-  position: absolute;
-  top: -14px;
-  right: -10px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid var(--paper-edge);
-  background: #fff;
-  color: var(--ink-soft);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.coach__close:hover {
-  color: var(--ink);
-}
+
+/* ---------- Help ---------- */
 
 .help-backdrop {
   position: fixed;
@@ -728,11 +884,144 @@ body {
   padding: 1px 6px;
   white-space: nowrap;
 }
+/* ---------- ⌘K command palette ---------- */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 17, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 14vh;
+  z-index: 24;
+}
+.palette {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  background: var(--rail);
+  color: var(--rail-text);
+  border: 1px solid var(--rail-line);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+  animation: palette-in 0.16s var(--ease-snap);
+}
+@keyframes palette-in {
+  from {
+    transform: translateY(-8px) scale(0.985);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.palette__input {
+  width: 100%;
+  padding: 15px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rail-line);
+  color: var(--rail-text);
+  font-family: var(--font-mono);
+  font-size: 14.5px;
+  outline: none;
+}
+.palette__input::placeholder {
+  color: var(--rail-text-dim);
+  opacity: 0.7;
+}
+.palette__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.palette__empty {
+  padding: 18px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--rail-text-dim);
+}
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.palette__item--sel {
+  background: var(--accent);
+  color: #fff;
+}
+.palette__section {
+  flex: 0 0 64px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.palette__item--sel .palette__section {
+  color: rgba(255, 255, 255, 0.75);
+}
+.palette__title {
+  flex: 1;
+}
+.palette__hint {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--rail-text-dim);
+  border: 1px solid var(--rail-line);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.palette__item--sel .palette__hint {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.help__foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rail-line);
+}
+.help__replay {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--rail-line);
+  border-radius: var(--radius-s);
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.help__replay:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 
 /* Shape palette row */
 .toolbar__group--row {
   flex-direction: row;
   gap: 6px;
+}
+.toolbar__group--wrap {
+  flex-wrap: wrap;
+}
+.toolbar__group--wrap .tool--shape {
+  flex: 0 0 calc(25% - 5px);
 }
 .tool--shape {
   width: auto;
@@ -802,6 +1091,42 @@ body {
   }
 }
 
+/* ---------- Polish: focus rings, hover states, selection motion ---------- */
+.tool:focus-visible,
+.tour-btn:focus-visible,
+.theme-toggle:focus-visible,
+.zoom__btn:focus-visible,
+.zoom__pct:focus-visible,
+.help__replay:focus-visible,
+.help__close:focus-visible,
+.fills__chip:focus-visible,
+.palette__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Marching-ants selection outline — quiet, and killed by reduced-motion. */
+.handles__outline {
+  animation: march 1.4s linear infinite;
+}
+@keyframes march {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+/* Edges light up under the cursor in Select mode so the fat invisible hit
+   area reads as targetable. */
+.canvas--select .edge:hover .edge__line {
+  stroke: var(--accent-strong);
+}
+.canvas--select .node:hover .node__shape,
+.canvas--select .node:hover .node__lid {
+  stroke: var(--ink-soft);
+}
+.canvas--select .node--selected:hover .node__shape,
+.canvas--select .node--selected:hover .node__lid {
+  stroke: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.001ms !important;
@@ -859,9 +1184,8 @@ body {
   .camera__note {
     display: none;
   }
-  .coach {
-    flex-direction: column;
-    gap: 10px;
+  .tour-card--center {
+    width: calc(100vw - 32px);
   }
   .status {
     display: none;

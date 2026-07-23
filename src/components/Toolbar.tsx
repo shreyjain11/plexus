@@ -4,23 +4,42 @@ import {
   ArrowIcon,
   ClearIcon,
   CursorIcon,
+  CylinderIcon,
   DiamondIcon,
   EllipseIcon,
   ExportIcon,
   HelpIcon,
+  HexagonIcon,
   ImageIcon,
   LineIcon,
   OpenIcon,
+  ParallelogramIcon,
   PenIcon,
   RectIcon,
   RedoIcon,
   SampleIcon,
   SaveIcon,
   TextIcon,
+  TriangleIcon,
   UndoIcon,
+  WriteIcon,
 } from "./icons";
 
 export type PaletteShape = Exclude<NodeType, "text">;
+
+const PALETTE: ReadonlyArray<{
+  type: PaletteShape;
+  label: string;
+  Icon: (p: React.SVGProps<SVGSVGElement>) => React.JSX.Element;
+}> = [
+  { type: "rect", label: "rectangle", Icon: RectIcon },
+  { type: "ellipse", label: "ellipse", Icon: EllipseIcon },
+  { type: "diamond", label: "diamond", Icon: DiamondIcon },
+  { type: "triangle", label: "triangle", Icon: TriangleIcon },
+  { type: "hexagon", label: "hexagon", Icon: HexagonIcon },
+  { type: "parallelogram", label: "parallelogram", Icon: ParallelogramIcon },
+  { type: "cylinder", label: "cylinder (database)", Icon: CylinderIcon },
+];
 
 interface ToolbarProps {
   mode: Mode;
@@ -100,33 +119,33 @@ export function Toolbar({
           <span className="tool__label">Text</span>
           <kbd className="tool__key">T</kbd>
         </button>
+        <button
+          type="button"
+          className={`tool ${mode === "write" ? "tool--active" : ""}`}
+          role="radio"
+          aria-checked={mode === "write"}
+          onClick={() => onMode("write")}
+          title="Write (W) — hand-write letters and digits, get clean text"
+          data-tour="write"
+        >
+          <WriteIcon />
+          <span className="tool__label">Write</span>
+          <kbd className="tool__key">W</kbd>
+        </button>
       </div>
 
-      <div className="toolbar__group toolbar__group--row" aria-label="Insert shape">
-        <button
-          type="button"
-          className={`tool tool--shape ${shape === "rect" ? "tool--armed" : ""}`}
-          onClick={() => onInsertShape("rect")}
-          title="Insert rectangle (also armed for the two-hand frame gesture)"
-        >
-          <RectIcon />
-        </button>
-        <button
-          type="button"
-          className={`tool tool--shape ${shape === "ellipse" ? "tool--armed" : ""}`}
-          onClick={() => onInsertShape("ellipse")}
-          title="Insert ellipse (also armed for the two-hand frame gesture)"
-        >
-          <EllipseIcon />
-        </button>
-        <button
-          type="button"
-          className={`tool tool--shape ${shape === "diamond" ? "tool--armed" : ""}`}
-          onClick={() => onInsertShape("diamond")}
-          title="Insert diamond (also armed for the two-hand frame gesture)"
-        >
-          <DiamondIcon />
-        </button>
+      <div className="toolbar__group toolbar__group--row toolbar__group--wrap" aria-label="Insert shape">
+        {PALETTE.map(({ type, label, Icon }) => (
+          <button
+            key={type}
+            type="button"
+            className={`tool tool--shape ${shape === type ? "tool--armed" : ""}`}
+            onClick={() => onInsertShape(type)}
+            title={`Insert ${label} (also armed for the two-hand frame gesture)`}
+          >
+            <Icon />
+          </button>
+        ))}
       </div>
 
       <div className="toolbar__group">

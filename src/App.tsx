@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Canvas, ZOOM_MAX, ZOOM_MIN, type FramePreview, type Mode, type ViewState } from "./components/Canvas";
 import { Toolbar, type PaletteShape } from "./components/Toolbar";
 import { Hud, type HudReadout } from "./components/Hud";
 import { CameraPanel } from "./components/CameraPanel";
-import { Coach } from "./components/Coach";
+import { Tour, TOUR_KEY, type TourSnapshot } from "./components/Tour";
+import { CommandPalette, type Command } from "./components/CommandPalette";
 import { HelpModal } from "./components/HelpModal";
 import { docReducer, initialDocState, type DocState } from "./state/doc";
 import { uid } from "./state/uid";
 import { downloadDocJson, loadLocal, parseDocJson, saveLocal } from "./state/persist";
 import { useStrokeInput, type RecognitionEvent } from "./input/useStrokeInput";
+import { useWriteComposer } from "./input/useWriteComposer";
 import { useHandTracking, type HandApi } from "./input/useHandTracking";
 import { cameraToScene } from "./input/cameraMap";
 import { downloadSvg } from "./export/svg";
 import { downloadPng } from "./export/png";
+import { MoonIcon, SunIcon } from "./components/icons";
 import { usePrefersReducedMotion } from "./input/usePrefersReducedMotion";
 import type { NodeType, Point } from "./types";
 
@@ -29,12 +32,35 @@ const SHAPE_LABEL: Record<NodeType, string> = {
   rect: "RECTANGLE",
   ellipse: "ELLIPSE",
   diamond: "DIAMOND",
+  triangle: "TRIANGLE",
+  hexagon: "HEXAGON",
+  parallelogram: "PARALLELOGRAM",
+  cylinder: "CYLINDER",
   text: "TEXT",
+};
+
+/** Default sizes for palette inserts (also seeds the two-hand frame preview). */
+const INSERT_SIZE: Record<Exclude<NodeType, "text">, { w: number; h: number }> = {
+  rect: { w: 160, h: 100 },
+  ellipse: { w: 150, h: 96 },
+  diamond: { w: 170, h: 104 },
+  triangle: { w: 165, h: 120 },
+  hexagon: { w: 180, h: 100 },
+  parallelogram: { w: 180, h: 96 },
+  cylinder: { w: 140, h: 118 },
 };
 
 function initState(base: DocState): DocState {
   const restored = loadLocal();
   return restored ? { ...base, doc: restored } : base;
+}
+
+export type Theme = "light" | "dark";
+
+/** The pre-paint script in index.html already set data-theme; read it back. */
+function initTheme(): Theme {
+  const t = document.documentElement.dataset.theme;
+  return t === "dark" ? "dark" : "light";
 }
 
 export function App() {
@@ -44,18 +70,42 @@ export function App() {
   const [shape, setShape] = useState<PaletteShape>("rect");
   const [view, setView] = useState<ViewState>({ x: 0, y: 0, z: 1 });
   const [readout, setReadout] = useState<HudReadout | null>(null);
-  const [ghost, setGhost] = useState<readonly Point[] | null>(null);
+  const [ghost, setGhost] = useState<ReadonlyArray<readonly Point[]> | null>(null);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [framePreview, setFramePreview] = useState<FramePreview | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [coachDismissed, setCoachDismissed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [glyphCount, setGlyphCount] = useState(0);
+  const [tourOpen, setTourOpen] = useState<boolean>(() => {
+    try {
+      return (
+        localStorage.getItem(TOUR_KEY) !== "done" &&
+        state.doc.nodes.length === 0 &&
+        state.doc.edges.length === 0
+      );
+    } catch {
+      return false;
+    }
+  });
+  const [theme, setTheme] = useState<Theme>(initTheme);
   const reducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("plexus.theme", theme);
+    } catch {
+      /* storage disabled — theme just won't persist */
+    }
+  }, [theme]);
 
   const stageRef = useRef<HTMLElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const nodesRef = useRef(state.doc.nodes);
   nodesRef.current = state.doc.nodes;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const arrowRef = useRef(arrow);
   arrowRef.current = arrow;
   const shapeRef = useRef(shape);
@@ -90,16 +140,25 @@ export function App() {
     );
   }, []);
 
-  const markAdded = useCallback((id: string, stroke: readonly Point[] | null) => {
+  const pulse = useCallback((id: string) => {
     setJustAddedId(id);
-    if (stroke) {
-      setGhost(stroke);
-      timers.current.push(window.setTimeout(() => setGhost((cur) => (cur === stroke ? null : cur)), GHOST_MS));
-    }
     timers.current.push(
       window.setTimeout(() => setJustAddedId((cur) => (cur === id ? null : cur)), SNAP_MS),
     );
   }, []);
+
+  const ghostInk = useCallback((strokes: ReadonlyArray<readonly Point[]>) => {
+    setGhost(strokes);
+    timers.current.push(window.setTimeout(() => setGhost((cur) => (cur === strokes ? null : cur)), GHOST_MS));
+  }, []);
+
+  const markAdded = useCallback(
+    (id: string, stroke: readonly Point[] | null) => {
+      pulse(id);
+      if (stroke) ghostInk([stroke]);
+    },
+    [pulse, ghostInk],
+  );
 
   const onResult = useCallback(
     (ev: RecognitionEvent) => {
@@ -113,7 +172,42 @@ export function App() {
     [flash, markAdded],
   );
 
-  const input = useStrokeInput({ dispatch, nodesRef, arrowRef, onResult });
+  // ----- write mode: glyph composition -----
+  const onGlyph = useCallback(
+    (char: string | null, strokes: ReadonlyArray<readonly Point[]>) => {
+      if (char) {
+        flash(`“${char}”`, "ok");
+        setGlyphCount((n) => n + 1);
+      } else {
+        flash("NOT A LETTER", "warn");
+      }
+      ghostInk(strokes);
+    },
+    [flash, ghostInk],
+  );
+
+  const composer = useWriteComposer({ dispatch, onGlyph, onNodePulse: pulse });
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
+
+  const writeRef = useRef(false);
+  writeRef.current = mode === "write";
+
+  const input = useStrokeInput({
+    dispatch,
+    nodesRef,
+    arrowRef,
+    onResult,
+    writeRef,
+    onWriteStroke: composer.onStroke,
+  });
+
+  // Leaving Write mode commits any pending ink so nothing silently vanishes.
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current === "write" && mode !== "write") composerRef.current.flush();
+    prevModeRef.current = mode;
+  }, [mode]);
 
   // ----- hand-tracking bridge -----
   const grabRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
@@ -234,7 +328,7 @@ export function App() {
       const v = viewRef.current;
       const cx = v.x + (rect?.width ?? 1000) / (2 * v.z);
       const cy = v.y + (rect?.height ?? 700) / (2 * v.z);
-      const size = type === "diamond" ? { w: 170, h: 104 } : type === "ellipse" ? { w: 150, h: 96 } : { w: 160, h: 100 };
+      const size = INSERT_SIZE[type];
       const id = uid("n");
       dispatch({
         type: "add-node",
@@ -285,7 +379,10 @@ export function App() {
       }
 
       if (mod) {
-        if (key === "z") {
+        if (key === "k") {
+          e.preventDefault();
+          setPaletteOpen((v) => !v);
+        } else if (key === "z") {
           e.preventDefault();
           dispatch({ type: e.shiftKey ? "redo" : "undo" });
         } else if (key === "y") {
@@ -323,8 +420,14 @@ export function App() {
       if (key === "d") setMode("draw");
       else if (key === "v" || key === "s") setMode("select");
       else if (key === "t") setMode("text");
+      else if (key === "w") setMode("write");
       else if (key === "a") setArrow((v) => !v);
       else if (e.key === "Delete" || e.key === "Backspace") {
+        // While composing in Write mode, Backspace erases the last character.
+        if (e.key === "Backspace" && modeRef.current === "write" && composerRef.current.backspace()) {
+          e.preventDefault();
+          return;
+        }
         if (selectionRef.current) {
           e.preventDefault();
           dispatch({ type: "delete-selection" });
@@ -344,6 +447,7 @@ export function App() {
         dispatch({ type: "move-node", id: node.id, x: node.x + dx, y: node.y + dy });
       } else if (e.key === "Escape") {
         if (helpOpen) setHelpOpen(false);
+        else if (modeRef.current === "write" && composerRef.current.composing) composerRef.current.flush();
         else dispatch({ type: "select", selection: null });
       }
     };
@@ -351,7 +455,51 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [helpOpen, exportSvgAction, saveAction, openAction, duplicateSelection, zoomBy]);
 
-  const docEmpty = state.doc.nodes.length === 0 && state.doc.edges.length === 0;
+  // ----- onboarding tour: live snapshot the steps watch -----
+  const labeledCount = useMemo(
+    () =>
+      state.doc.nodes.filter((n) => n.label.trim() !== "").length +
+      state.doc.edges.filter((e) => (e.label ?? "").trim() !== "").length,
+    [state.doc],
+  );
+  const tourSnap: TourSnapshot = {
+    nodes: state.doc.nodes.length,
+    edges: state.doc.edges.length,
+    labeled: labeledCount,
+    glyphs: glyphCount,
+    handRunning: hand.status === "running",
+  };
+
+  // ----- ⌘K command registry (one list; the palette fuzzy-filters it) -----
+  const commands: Command[] = [
+    { id: "mode-draw", section: "Mode", title: "Draw", hint: "D", keywords: "sketch pen", run: () => setMode("draw") },
+    { id: "mode-select", section: "Mode", title: "Select & move", hint: "V", keywords: "cursor arrange", run: () => setMode("select") },
+    { id: "mode-text", section: "Mode", title: "Text tool", hint: "T", keywords: "textbox type", run: () => setMode("text") },
+    { id: "mode-write", section: "Mode", title: "Write — hand-write letters", hint: "W", keywords: "handwriting glyph letters", run: () => setMode("write") },
+    ...(Object.keys(INSERT_SIZE) as Array<keyof typeof INSERT_SIZE>).map((t) => ({
+      id: `insert-${t}`,
+      section: "Insert",
+      title: `Insert ${t === "rect" ? "rectangle" : t}`,
+      keywords: `shape add ${t === "cylinder" ? "database db" : t === "diamond" ? "decision" : t === "parallelogram" ? "input output io" : ""}`,
+      run: () => insertShape(t),
+    })),
+    { id: "arrows", section: "Edge", title: arrow ? "Switch to plain lines" : "Switch to arrows", hint: "A", keywords: "arrowheads connector toggle", run: () => setArrow((v) => !v) },
+    { id: "undo", section: "History", title: "Undo", hint: "⌘Z", run: () => dispatch({ type: "undo" }) },
+    { id: "redo", section: "History", title: "Redo", hint: "⌘⇧Z", run: () => dispatch({ type: "redo" }) },
+    { id: "duplicate", section: "History", title: "Duplicate selection", hint: "⌘D", keywords: "copy clone", run: duplicateSelection },
+    { id: "zoom-in", section: "View", title: "Zoom in", hint: "⌘+", run: () => zoomBy(1.2) },
+    { id: "zoom-out", section: "View", title: "Zoom out", hint: "⌘−", run: () => zoomBy(1 / 1.2) },
+    { id: "zoom-reset", section: "View", title: "Reset zoom", hint: "⌘0", keywords: "100%", run: () => zoomBy(0) },
+    { id: "theme", section: "View", title: theme === "dark" ? "Switch to light theme" : "Switch to dark theme", keywords: "dark light mode night", run: () => setTheme((t) => (t === "dark" ? "light" : "dark")) },
+    { id: "save", section: "File", title: "Save diagram as JSON", hint: "⌘S", keywords: "download export", run: saveAction },
+    { id: "open", section: "File", title: "Open a saved diagram", hint: "⌘O", keywords: "load import json", run: openAction },
+    { id: "export-svg", section: "File", title: "Export SVG", hint: "⌘E", keywords: "vector download", run: exportSvgAction },
+    { id: "export-png", section: "File", title: "Export PNG", keywords: "raster image download", run: exportPngAction },
+    { id: "clear", section: "File", title: "Clear canvas", keywords: "delete everything reset", run: () => dispatch({ type: "clear" }) },
+    { id: "sample", section: "File", title: "Load sample pathway", keywords: "demo example", run: () => dispatch({ type: "load-sample" }) },
+    { id: "tour", section: "Help", title: "Replay the guided tour", keywords: "onboarding tutorial", run: () => setTourOpen(true) },
+    { id: "help", section: "Help", title: "Keyboard shortcuts", hint: "?", keywords: "keys reference", run: () => setHelpOpen(true) },
+  ];
 
   return (
     <div className="app">
@@ -368,6 +516,15 @@ export function App() {
             Plexus
             <small>sketch → clean</small>
           </span>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
         </header>
 
         <Toolbar
@@ -392,10 +549,12 @@ export function App() {
 
         <div className="rail__spacer" />
 
-        <CameraPanel hand={hand} />
+        <div data-tour="camera">
+          <CameraPanel hand={hand} />
+        </div>
       </aside>
 
-      <main className="stage" ref={stageRef}>
+      <main className="stage" ref={stageRef} data-tour="canvas">
         <Canvas
           doc={state.doc}
           selection={state.selection}
@@ -403,6 +562,8 @@ export function App() {
           input={input}
           dispatch={dispatch}
           ghost={ghost}
+          writeBuffer={composer.buffer}
+          writeGuide={composer.guide}
           justAddedId={justAddedId}
           cursor={hand.status === "running" ? hand.cursor : null}
           cursor2={hand.status === "running" ? hand.cursor2 : null}
@@ -430,12 +591,22 @@ export function App() {
           </button>
         </div>
 
-        {docEmpty && !coachDismissed && <Coach onDismiss={() => setCoachDismissed(true)} />}
-
         <Hud readout={readout} reducedMotion={reducedMotion} />
       </main>
 
-      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      {helpOpen && (
+        <HelpModal
+          onClose={() => setHelpOpen(false)}
+          onReplayTour={() => {
+            setHelpOpen(false);
+            setTourOpen(true);
+          }}
+        />
+      )}
+
+      {tourOpen && <Tour snap={tourSnap} reducedMotion={reducedMotion} onClose={() => setTourOpen(false)} />}
+
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
 
       <input
         ref={fileRef}

@@ -4,7 +4,10 @@ const SHORTCUTS: Array<[string, string]> = [
   ["D", "Draw mode"],
   ["V / S", "Select mode"],
   ["T", "Text tool — click to place a text box"],
+  ["W", "Write mode — hand-write letters & digits"],
+  ["⌫ (writing)", "Erase the last written character"],
   ["A", "Toggle arrowheads on new connectors"],
+  ["⌘/Ctrl K", "Command palette — every action, fuzzy-searched"],
   ["⌘/Ctrl Z", "Undo"],
   ["⌘/Ctrl ⇧ Z", "Redo"],
   ["⌘/Ctrl D", "Duplicate selection"],
@@ -21,7 +24,13 @@ const SHORTCUTS: Array<[string, string]> = [
   ["Both hands pinch", "Frame the armed shape in the air"],
 ];
 
-export function HelpModal({ onClose }: { onClose: () => void }) {
+export function HelpModal({
+  onClose,
+  onReplayTour,
+}: {
+  onClose: () => void;
+  onReplayTour: () => void;
+}) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -50,6 +59,11 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </dl>
+        <footer className="help__foot">
+          <button type="button" className="help__replay" onClick={onReplayTour}>
+            Replay the guided tour
+          </button>
+        </footer>
       </div>
     </div>
   );
