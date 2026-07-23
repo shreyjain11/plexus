@@ -6,7 +6,7 @@ export interface Point {
 /** A raw input stroke in scene coordinates, ordered by time. */
 export type Stroke = Point[];
 
-export type NodeType = "rect" | "ellipse";
+export type NodeType = "rect" | "ellipse" | "diamond" | "text";
 
 export interface DiagramNode {
   id: string;
@@ -17,6 +17,8 @@ export interface DiagramNode {
   w: number;
   h: number;
   label: string;
+  /** Background fill; defaults to white ("text" nodes ignore it). */
+  fill?: string;
 }
 
 /** An edge endpoint: either attached to a node or a free point in the scene. */
@@ -28,6 +30,7 @@ export interface DiagramEdge {
   from: EdgeEnd;
   to: EdgeEnd;
   arrow: boolean;
+  label?: string;
 }
 
 export interface Doc {
@@ -40,3 +43,10 @@ export function isNodeRef(end: EdgeEnd): end is NodeRef {
 }
 
 export const EMPTY_DOC: Doc = { nodes: [], edges: [] };
+
+export const MIN_NODE = { w: 40, h: 32 } as const;
+export const MIN_TEXT_NODE = { w: 60, h: 28 } as const;
+
+export function minSizeFor(type: NodeType): { w: number; h: number } {
+  return type === "text" ? MIN_TEXT_NODE : MIN_NODE;
+}
