@@ -182,6 +182,12 @@ body {
 .canvas--select {
   cursor: default;
 }
+.canvas--text {
+  cursor: text;
+}
+.canvas--pan {
+  cursor: grab;
+}
 .canvas__bg {
   pointer-events: all;
 }
@@ -213,6 +219,92 @@ body {
 .node--snap .node__shape {
   animation: snap-in 0.42s var(--ease-snap);
 }
+.node__textbox {
+  stroke: transparent;
+  stroke-width: 1.5;
+}
+.node--text.node--selected .node__textbox {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+.node__label--placeholder {
+  fill: var(--paper-dot);
+  font-style: italic;
+}
+.edge__label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  fill: var(--ink);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 5;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Alignment guides + resize handles + frame preview */
+.guide {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.handles__outline {
+  fill: none;
+  stroke: var(--accent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.handles__grip {
+  fill: #fff;
+  stroke: var(--accent);
+  cursor: pointer;
+}
+.handles__grip--nw,
+.handles__grip--se {
+  cursor: nwse-resize;
+}
+.handles__grip--ne,
+.handles__grip--sw {
+  cursor: nesw-resize;
+}
+.handles__grip--n,
+.handles__grip--s {
+  cursor: ns-resize;
+}
+.handles__grip--e,
+.handles__grip--w {
+  cursor: ew-resize;
+}
+.frame-preview {
+  stroke: var(--accent);
+  pointer-events: none;
+}
+
+/* Fill swatches */
+.fills {
+  display: flex;
+  gap: 6px;
+  padding: 5px 7px;
+  background: var(--rail);
+  border: 1px solid var(--rail-line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-panel);
+  width: max-content;
+}
+.fills__chip {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rail-line);
+  cursor: pointer;
+  padding: 0;
+}
+.fills__chip--on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
 
 /* Edges */
 .edge__line {
@@ -225,6 +317,10 @@ body {
   stroke: transparent;
   stroke-width: 16;
   fill: none;
+  /* A transparent stroke isn't a reliable pointer target under the default
+     visiblePainted; `stroke` hit-tests the geometry regardless of paint, so
+     the fat invisible line stays clickable for selection and double-press. */
+  pointer-events: stroke;
 }
 .canvas--select .edge {
   cursor: pointer;
@@ -237,13 +333,16 @@ body {
   animation: draw-in 0.42s var(--ease-snap);
 }
 
-/* Strokes */
+/* Strokes — purely decorative overlays; they must never intercept pointers
+   (a faded-out ghost path lingers in the DOM and would otherwise steal clicks
+   along a shape's perimeter, e.g. on the resize handles at its corners). */
 .stroke-live {
   stroke: var(--accent-strong);
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.9;
+  pointer-events: none;
 }
 .stroke-ghost {
   stroke: var(--accent);
@@ -251,6 +350,7 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
   animation: ghost-out var(--ghost-ms, 240ms) ease forwards;
+  pointer-events: none;
 }
 
 /* Hand cursor reticle */
@@ -445,6 +545,207 @@ body {
   color: var(--rail-text);
 }
 
+/* ---------- Status chip + zoom control ---------- */
+.status {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  background: rgba(246, 247, 244, 0.85);
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  padding: 5px 12px;
+  pointer-events: none;
+  z-index: 4;
+}
+.zoom {
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  background: var(--rail);
+  border: 1px solid var(--rail-line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-panel);
+  z-index: 4;
+  overflow: hidden;
+}
+.zoom__btn,
+.zoom__pct {
+  background: none;
+  border: none;
+  color: var(--rail-text);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  padding: 7px 11px;
+  font-size: 13px;
+}
+.zoom__pct {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--rail-text-dim);
+  min-width: 52px;
+}
+.zoom__btn:hover,
+.zoom__pct:hover {
+  background: var(--rail-raised);
+}
+
+/* ---------- Coach + help ---------- */
+.coach {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 14px;
+  max-width: min(880px, calc(100% - 48px));
+  z-index: 3;
+  /* Hints never block the canvas — draw straight through them and they vanish
+     on the first shape. Only the dismiss button is interactive. */
+  pointer-events: none;
+}
+.coach__card {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius-m);
+  padding: 16px 16px 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  backdrop-filter: blur(2px);
+}
+.coach__card strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.coach__card kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.coach__step {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+.coach__close {
+  position: absolute;
+  top: -14px;
+  right: -10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--paper-edge);
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.coach__close:hover {
+  color: var(--ink);
+}
+
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 18, 24, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+.help {
+  width: min(460px, calc(100vw - 40px));
+  max-height: min(620px, calc(100vh - 60px));
+  overflow: auto;
+  background: var(--rail);
+  color: var(--rail-text);
+  border: 1px solid var(--rail-line);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-panel);
+  padding: 18px 20px 20px;
+}
+.help__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.help__head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.help__close {
+  background: none;
+  border: none;
+  color: var(--rail-text-dim);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+}
+.help__close:hover {
+  color: var(--rail-text);
+}
+.help__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.help__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.help__row dt {
+  flex: 0 0 128px;
+}
+.help__row dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--rail-text-dim);
+}
+.help__row kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--rail-line);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* Shape palette row */
+.toolbar__group--row {
+  flex-direction: row;
+  gap: 6px;
+}
+.tool--shape {
+  width: auto;
+  flex: 1;
+  justify-content: center;
+  padding: 8px 0;
+}
+.tool--armed {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ---------- Focus, motion, responsive ---------- */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -544,8 +845,10 @@ body {
   .tool__key {
     display: none;
   }
-  .tool {
+  .tool,
+  .tool--shape {
     padding: 10px;
+    flex: none;
   }
   .camera {
     flex-direction: row;
@@ -554,6 +857,13 @@ body {
   }
   .camera__head,
   .camera__note {
+    display: none;
+  }
+  .coach {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .status {
     display: none;
   }
 }

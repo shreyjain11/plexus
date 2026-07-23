@@ -42,7 +42,12 @@ export function CameraPanel({ hand }: { hand: HandTracking }) {
         </button>
       )}
 
-      {running && <p className="camera__note">Pinch thumb &amp; index to draw. Open hand to move.</p>}
+      {running && (
+        <p className="camera__note">
+          Pinch thumb &amp; index to draw. Open hand to move. Pinch with <em>both</em> hands to
+          frame a shape.
+        </p>
+      )}
 
       {!running && status !== "idle" && status !== "loading" && (
         <p className="camera__note camera__note--warn">
