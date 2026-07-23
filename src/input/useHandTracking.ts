@@ -311,7 +311,7 @@ export function useHandTracking({ input, mode, api }: Options): HandTracking {
         const active = activeIdx >= 0 ? states[activeIdx]! : null;
 
         if (active && active.pinched && active.cursor) {
-          if (modeRef.current === "draw") {
+          if (modeRef.current === "draw" || modeRef.current === "write") {
             if (!d) {
               drawingRef.current = { hand: activeIdx, started: false, skip: START_SKIP_FRAMES, times: [] };
             } else if (d.skip > 0) {

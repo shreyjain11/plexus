@@ -20,6 +20,11 @@ interface Options {
   /** Whether new connectors get arrowheads. */
   arrowRef: React.RefObject<boolean>;
   onResult: (event: RecognitionEvent) => void;
+  /** True while Write mode is active: finished strokes go to the glyph
+   * composer instead of the shape classifier. A ref (not a prop) so mouse,
+   * touch, and hand input all share the exact same collection path. */
+  writeRef?: React.RefObject<boolean>;
+  onWriteStroke?: (stroke: Point[]) => void;
 }
 
 export interface StrokeInput {
@@ -38,7 +43,14 @@ export interface StrokeInput {
  * touch, and hand-tracking input all call begin/extend/end, so every input
  * shares one drawing and recognition path.
  */
-export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Options): StrokeInput {
+export function useStrokeInput({
+  dispatch,
+  nodesRef,
+  arrowRef,
+  onResult,
+  writeRef,
+  onWriteStroke,
+}: Options): StrokeInput {
   const [live, setLive] = useState<readonly Point[] | null>(null);
   const ref = useRef<Point[] | null>(null);
 
@@ -76,6 +88,11 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
     setLive(null);
     if (!stroke || stroke.length < 2) return;
 
+    if (writeRef?.current && onWriteStroke) {
+      onWriteStroke(stroke);
+      return;
+    }
+
     let recognition = classifyStroke(stroke);
     let addedId: string | null = null;
 
@@ -111,7 +128,7 @@ export function useStrokeInput({ dispatch, nodesRef, arrowRef, onResult }: Optio
     }
 
     onResult({ recognition, addedId, stroke });
-  }, [dispatch, nodesRef, arrowRef, onResult]);
+  }, [dispatch, nodesRef, arrowRef, onResult, writeRef, onWriteStroke]);
 
   return { live, begin, extend, end, cancel, trimTail };
 }

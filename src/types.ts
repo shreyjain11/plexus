@@ -6,7 +6,15 @@ export interface Point {
 /** A raw input stroke in scene coordinates, ordered by time. */
 export type Stroke = Point[];
 
-export type NodeType = "rect" | "ellipse" | "diamond" | "text";
+export type NodeType =
+  | "rect"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "hexagon"
+  | "parallelogram"
+  | "cylinder"
+  | "text";
 
 export interface DiagramNode {
   id: string;
@@ -19,6 +27,11 @@ export interface DiagramNode {
   label: string;
   /** Background fill; defaults to white ("text" nodes ignore it). */
   fill?: string;
+  /**
+   * Label size in px; defaults to the standard 15. Set by Write mode so
+   * air-written text keeps roughly the size it was written at.
+   */
+  fontSize?: number;
 }
 
 /** An edge endpoint: either attached to a node or a free point in the scene. */
