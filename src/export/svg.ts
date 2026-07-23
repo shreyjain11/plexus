@@ -43,15 +43,25 @@ function extentOf(doc: Doc): Extent {
   return ext;
 }
 
+const LABEL_FAMILY = `font-family="'IBM Plex Mono', ui-monospace, monospace"`;
+const LABEL_FONT = `${LABEL_FAMILY} font-size="15" fill="#23262c"`;
+
 function nodeMarkup(n: DiagramNode): string {
   const cx = n.x + n.w / 2;
   const cy = n.y + n.h / 2;
-  const shape =
-    n.type === "ellipse"
-      ? `<ellipse cx="${cx}" cy="${cy}" rx="${n.w / 2}" ry="${n.h / 2}" fill="#ffffff" stroke="#23262c" stroke-width="2"/>`
-      : `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8" fill="#ffffff" stroke="#23262c" stroke-width="2"/>`;
+  const fill = n.fill ?? "#ffffff";
+  let shape = "";
+  if (n.type === "ellipse") {
+    shape = `<ellipse cx="${cx}" cy="${cy}" rx="${n.w / 2}" ry="${n.h / 2}" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
+  } else if (n.type === "rect") {
+    shape = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
+  } else if (n.type === "diamond") {
+    const pts = `${cx},${n.y} ${n.x + n.w},${cy} ${cx},${n.y + n.h} ${n.x},${cy}`;
+    shape = `<polygon points="${pts}" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
+  }
+  // "text" nodes export as pure text — no shape markup at all.
   const label = n.label
-    ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="15" fill="#23262c">${esc(n.label)}</text>`
+    ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" ${LABEL_FONT}>${esc(n.label)}</text>`
     : "";
   return shape + label;
 }
@@ -75,7 +85,13 @@ export function docToSvg(doc: Doc): string {
       const r = routeEdge(e, byId);
       if (!r) return "";
       const marker = e.arrow ? ` marker-end="url(#${ARROW_ID})"` : "";
-      return `<line x1="${r.x1}" y1="${r.y1}" x2="${r.x2}" y2="${r.y2}" stroke="#23262c" stroke-width="2" stroke-linecap="round"${marker}/>`;
+      const line = `<line x1="${r.x1}" y1="${r.y1}" x2="${r.x2}" y2="${r.y2}" stroke="#23262c" stroke-width="2" stroke-linecap="round"${marker}/>`;
+      if (!e.label) return line;
+      const mx = (r.x1 + r.x2) / 2;
+      const my = (r.y1 + r.y2) / 2;
+      // paint-order halo keeps the label legible where it crosses the line.
+      const label = `<text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" ${LABEL_FAMILY} font-size="13" fill="#23262c" paint-order="stroke" stroke="#ffffff" stroke-width="5" stroke-linejoin="round">${esc(e.label)}</text>`;
+      return line + "\n    " + label;
     })
     .join("\n    ");
 
