@@ -36,4 +36,35 @@
   --radius-m: 10px;
   --shadow-panel: 0 12px 32px rgba(15, 18, 24, 0.28);
   --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
+
+  color-scheme: light;
+}
+
+/* Dark drafting sheet — same identity, night shift. Exports are unaffected:
+   SVG/PNG serialize print-ready ink-on-white regardless of theme. */
+:root[data-theme="dark"] {
+  --paper: #14161b;
+  --paper-dot: #31353e;
+  --paper-edge: #23262d;
+
+  --rail: #0f1115;
+  --rail-raised: #1b1e25;
+  --rail-line: #272b34;
+  --rail-text: #e6e8ec;
+  --rail-text-dim: #9098a5;
+
+  --ink: #dfe2e8;
+  --ink-soft: #aab0bb;
+  --node-fill: #1d2028;
+
+  --accent: #6b93ff;
+  --accent-soft: rgba(107, 147, 255, 0.2);
+  --accent-strong: #8aa9ff;
+
+  --warn: #d98a3d;
+  --ok: #58ba8e;
+
+  --shadow-panel: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
 }
