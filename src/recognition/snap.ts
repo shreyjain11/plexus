@@ -1,5 +1,6 @@
 import type { DiagramEdge, DiagramNode, EdgeEnd, Point } from "../types";
 import { isNodeRef } from "../types";
+import { shapeVertices } from "../geometry/shapes";
 
 /** How far outside a node's bbox a connector endpoint may land and still attach. */
 export const SNAP_PAD = 18;
@@ -33,9 +34,32 @@ export function snapEnd(p: Point, nodes: readonly DiagramNode[]): EdgeEnd {
 }
 
 /**
+ * Where the ray c + t·d (t > 0) first crosses the boundary of a convex
+ * polygon. Returns the smallest positive t, or null when the ray misses
+ * (degenerate polygon / center outside).
+ */
+export function polygonRayT(verts: readonly Point[], c: Point, d: Point): number | null {
+  let best: number | null = null;
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i]!;
+    const b = verts[(i + 1) % verts.length]!;
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const denom = d.x * ey - d.y * ex;
+    if (Math.abs(denom) < 1e-9) continue; // ray parallel to this edge
+    const t = ((a.x - c.x) * ey - (a.y - c.y) * ex) / denom;
+    const s = denom !== 0 ? ((a.x - c.x) * d.y - (a.y - c.y) * d.x) / denom : -1;
+    if (t > 1e-9 && s >= -1e-9 && s <= 1 + 1e-9 && (best === null || t < best)) best = t;
+  }
+  return best;
+}
+
+/**
  * Where the ray from a node's center toward `target` crosses the node border.
- * Rectangles (and text boxes) clip against the AABB, ellipses against the
- * parametric boundary, diamonds against the rhombus (a scaled L1 ball).
+ * Rectangles, text boxes, and cylinders clip against the AABB (a cylinder's
+ * bulges are cosmetic), ellipses against the parametric boundary, diamonds
+ * against the rhombus (a scaled L1 ball), and the other polygonal shapes
+ * against their actual edges.
  */
 export function borderPoint(node: DiagramNode, target: Point): Point {
   const c = nodeCenter(node);
@@ -49,6 +73,10 @@ export function borderPoint(node: DiagramNode, target: Point): Point {
     t = 1 / Math.sqrt((dx / hw) ** 2 + (dy / hh) ** 2);
   } else if (node.type === "diamond") {
     t = 1 / (Math.abs(dx) / hw + Math.abs(dy) / hh);
+  } else if (node.type === "triangle" || node.type === "hexagon" || node.type === "parallelogram") {
+    const verts = shapeVertices(node.type, node.x, node.y, node.w, node.h)!;
+    const hit = polygonRayT(verts, c, { x: dx, y: dy });
+    t = hit ?? Math.min(dx === 0 ? Infinity : hw / Math.abs(dx), dy === 0 ? Infinity : hh / Math.abs(dy));
   } else {
     const tx = dx === 0 ? Infinity : hw / Math.abs(dx);
     const ty = dy === 0 ? Infinity : hh / Math.abs(dy);

@@ -136,11 +136,18 @@ export function docReducer(state: DocState, action: DocAction): DocState {
     }
 
     case "set-fill": {
+      // "" clears the stored fill so the node follows the theme again.
       const target = state.doc.nodes.find((n) => n.id === action.id);
-      if (!target || (target.fill ?? "#ffffff") === action.fill) return state;
+      if (!target || (target.fill ?? "") === action.fill) return state;
       return mutate(state, {
         ...state.doc,
-        nodes: state.doc.nodes.map((n) => (n.id === action.id ? { ...n, fill: action.fill } : n)),
+        nodes: state.doc.nodes.map((n) =>
+          n.id === action.id
+            ? action.fill
+              ? { ...n, fill: action.fill }
+              : (({ fill: _drop, ...rest }) => rest)(n)
+            : n,
+        ),
       });
     }
 
@@ -209,17 +216,21 @@ export function docReducer(state: DocState, action: DocAction): DocState {
 /** A labeled example so the tool never has to open empty. */
 export function samplePathway(): Doc {
   const nodes: DiagramNode[] = [
-    { id: "sample_signal", type: "ellipse", x: 70, y: 220, w: 136, h: 76, label: "SIGNAL", fill: "#eef2fb" },
-    { id: "sample_filter", type: "rect", x: 300, y: 96, w: 150, h: 70, label: "FILTER" },
-    { id: "sample_gate", type: "diamond", x: 300, y: 340, w: 170, h: 96, label: "PASS?" },
-    { id: "sample_render", type: "ellipse", x: 560, y: 220, w: 144, h: 78, label: "RENDER", fill: "#e8f1ec" },
-    { id: "sample_note", type: "text", x: 320, y: 480, w: 220, h: 36, label: "sketched with plexus" },
+    { id: "sample_signal", type: "ellipse", x: 55, y: 225, w: 136, h: 76, label: "SIGNAL", fill: "#eef2fb" },
+    { id: "sample_prep", type: "hexagon", x: 268, y: 92, w: 168, h: 84, label: "PREP" },
+    { id: "sample_gate", type: "diamond", x: 268, y: 352, w: 170, h: 96, label: "PASS?" },
+    { id: "sample_filter", type: "rect", x: 512, y: 98, w: 150, h: 70, label: "FILTER" },
+    { id: "sample_render", type: "ellipse", x: 520, y: 360, w: 144, h: 78, label: "RENDER", fill: "#e8f1ec" },
+    { id: "sample_store", type: "cylinder", x: 770, y: 214, w: 132, h: 112, label: "STORE", fill: "#fdf2e7" },
+    { id: "sample_note", type: "text", x: 330, y: 512, w: 220, h: 36, label: "sketched with plexus" },
   ];
   const edges: DiagramEdge[] = [
-    { id: "sample_e1", from: { node: "sample_signal" }, to: { node: "sample_filter" }, arrow: true },
+    { id: "sample_e1", from: { node: "sample_signal" }, to: { node: "sample_prep" }, arrow: true },
     { id: "sample_e2", from: { node: "sample_signal" }, to: { node: "sample_gate" }, arrow: true },
-    { id: "sample_e3", from: { node: "sample_filter" }, to: { node: "sample_render" }, arrow: true },
+    { id: "sample_e3", from: { node: "sample_prep" }, to: { node: "sample_filter" }, arrow: true },
     { id: "sample_e4", from: { node: "sample_gate" }, to: { node: "sample_render" }, arrow: true, label: "yes" },
+    { id: "sample_e5", from: { node: "sample_filter" }, to: { node: "sample_store" }, arrow: true },
+    { id: "sample_e6", from: { node: "sample_render" }, to: { node: "sample_store" }, arrow: true },
   ];
   return { nodes, edges };
 }

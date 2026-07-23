@@ -32,8 +32,31 @@ export const RECOG = {
   RING_SAMPLES: 64,
   /** Half-window (in ring samples) for the corner "straw" test. */
   STRAW_WINDOW: 4,
-  /** A straw must dip below this fraction of the median to indicate a corner. */
+  /** A straw must dip below this fraction of the straight-straw baseline to
+   * indicate a corner. */
   STRAW_DIP: 0.93,
+  /**
+   * Baseline percentile for the straw comparison. The median fails on corner-
+   * rich shapes: a hexagon's six corners each depress straws across a ±W
+   * window, touching 6·2W = 48 of 64 ring samples, so the median is itself a
+   * corner-depressed straw and no dip clears the threshold. The 80th
+   * percentile still lands on a mid-side (straight) straw for every shape we
+   * classify, while a circle's uniform straws keep it dip-free.
+   */
+  STRAW_BASELINE_PCT: 0.8,
+  /** Mean corner "midpointness" below this reads as a diamond (see isDiamond). */
+  DIAMOND_MIDPOINTNESS: 0.4,
+  /** A diamond also fills only ~half its bbox. Requiring this keeps a jittered
+   * hexagon (area ≈ 0.75) whose side vertices ALSO sit at edge midpoints from
+   * being mistaken for a diamond when noise hides a corner or two. */
+  DIAMOND_AREA_MAX: 0.62,
+  /** Ring-area / bbox-area below this (with 3 corners) reads as a triangle. */
+  TRIANGLE_AREA_MAX: 0.72,
+  /** Ring-area / bbox-area window (with 4–6 corners) that reads as a hexagon —
+   * a sloppy rectangle that sheds an extra RDP corner still fills ~0.9+, and
+   * anything emptier than ~0.62 is diamond/triangle territory. */
+  HEXAGON_AREA_MIN: 0.62,
+  HEXAGON_AREA_MAX: 0.88,
 } as const;
 
 const ringIndex = (i: number, n: number): number => ((i % n) + n) % n;
@@ -76,8 +99,8 @@ function countRingCorners(ring: Stroke, epsilon: number): number[] {
     straws[i] = dist(ring[ringIndex(i - W, n)]!, ring[ringIndex(i + W, n)]!);
   }
   const sorted = [...straws].sort((a, b) => a - b);
-  const median = sorted[n >> 1]!;
-  const dipThreshold = RECOG.STRAW_DIP * median;
+  const baseline = sorted[Math.min(n - 1, Math.floor(n * RECOG.STRAW_BASELINE_PCT))]!;
+  const dipThreshold = RECOG.STRAW_DIP * baseline;
 
   // Split the ring at the farthest-apart pair so RDP sees two open chains.
   let bi = 0;
@@ -135,15 +158,14 @@ function countRingCorners(ring: Stroke, epsilon: number): number[] {
 }
 
 /**
- * Distinguish a drawn diamond from a rectangle by *where* its corners sit:
- * diamond vertices lie near the bbox edge midpoints (normalized coordinates
- * (±1,0)/(0,±1) from the center), rectangle corners near the bbox corners
- * (±1,±1). The mean of min(|nx|,|ny|) is ≈0 for a diamond, ≈1 for a rect.
+ * Mean corner "midpointness": how close corners sit to the bbox edge
+ * midpoints (0) versus the bbox corners (1). Diamond vertices lie near the
+ * edge midpoints (normalized coordinates (±1,0)/(0,±1) from the center),
+ * rectangle corners near (±1,±1) — the mean of min(|nx|,|ny|) separates them.
  */
-function isDiamond(ring: Stroke, cornerIdx: number[]): boolean {
-  if (cornerIdx.length < 3 || cornerIdx.length > 5) return false;
+function cornerMidpointness(ring: Stroke, cornerIdx: number[]): number {
   const b = bbox(ring);
-  if (b.w === 0 || b.h === 0) return false;
+  if (b.w === 0 || b.h === 0 || cornerIdx.length === 0) return 1;
   const cx = b.x + b.w / 2;
   const cy = b.y + b.h / 2;
   let sum = 0;
@@ -153,7 +175,32 @@ function isDiamond(ring: Stroke, cornerIdx: number[]): boolean {
     const ny = Math.abs((p.y - cy) / (b.h / 2));
     sum += Math.min(nx, ny);
   }
-  return sum / cornerIdx.length < 0.4;
+  return sum / cornerIdx.length;
+}
+
+function isDiamond(ring: Stroke, cornerIdx: number[]): boolean {
+  if (cornerIdx.length < 3 || cornerIdx.length > 5) return false;
+  return (
+    cornerMidpointness(ring, cornerIdx) < RECOG.DIAMOND_MIDPOINTNESS &&
+    ringAreaRatio(ring) < RECOG.DIAMOND_AREA_MAX
+  );
+}
+
+/**
+ * |shoelace area| of the ring divided by its bbox area — a strong second
+ * feature where corner counts are ambiguous: a rectangle fills ~0.95 of its
+ * bbox, a hexagon ~0.75, a triangle or diamond ~0.5.
+ */
+function ringAreaRatio(ring: Stroke): number {
+  const b = bbox(ring);
+  if (b.w === 0 || b.h === 0) return 1;
+  let area2 = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i]!;
+    const q = ring[(i + 1) % ring.length]!;
+    area2 += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(area2 / 2) / (b.w * b.h);
 }
 
 /** std/mean of distances from the ring centroid — 0 for a perfect circle. */
@@ -194,9 +241,18 @@ export function classifyStroke(stroke: Stroke): Recognition {
     const isEllipse =
       corners < 3 && (cv < RECOG.ELLIPSE_CV || (corners <= 2 && cv < RECOG.ELLIPSE_CV_LOOSE));
 
+    const areaRatio = ringAreaRatio(ring);
     let type: NodeType;
     if (isEllipse) type = "ellipse";
     else if (isDiamond(ring, cornerIdx)) type = "diamond";
+    else if (corners === 3 && areaRatio < RECOG.TRIANGLE_AREA_MAX) type = "triangle";
+    else if (
+      corners >= 4 &&
+      corners <= 6 &&
+      areaRatio >= RECOG.HEXAGON_AREA_MIN &&
+      areaRatio < RECOG.HEXAGON_AREA_MAX
+    )
+      type = "hexagon";
     else type = "rect";
 
     // Enforce a minimum size, growing outward from the sketch's center.

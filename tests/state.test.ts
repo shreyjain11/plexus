@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { docReducer, initialDocState, samplePathway, type DocState } from "../src/state/doc";
-import { docToJson, parseDocJson, validateDoc } from "../src/state/persist";
+import { docToJson, loadLocal, parseDocJson, validateDoc } from "../src/state/persist";
 import { mapWithMargin } from "../src/input/cameraMap";
 import type { DiagramNode } from "../src/types";
 
@@ -50,10 +50,13 @@ describe("docReducer — v2 actions", () => {
     let s = addNode(initialDocState, node({ label: "A" }));
     const depth = s.past.length;
     expect(docReducer(s, { type: "set-label", id: "n1", label: "A" })).toBe(s);
-    expect(docReducer(s, { type: "set-fill", id: "n1", fill: "#ffffff" })).toBe(s);
+    expect(docReducer(s, { type: "set-fill", id: "n1", fill: "" })).toBe(s); // already auto
     s = docReducer(s, { type: "set-fill", id: "n1", fill: "#eef2fb" });
     expect(s.doc.nodes[0]!.fill).toBe("#eef2fb");
     expect(s.past.length).toBe(depth + 1);
+    // Clearing back to auto drops the property entirely.
+    s = docReducer(s, { type: "set-fill", id: "n1", fill: "" });
+    expect("fill" in s.doc.nodes[0]!).toBe(false);
   });
 
   it("edge labels set and clear (clearing drops the property)", () => {
@@ -109,8 +112,43 @@ describe("persistence", () => {
       }),
     ).toBeNull();
     expect(
-      validateDoc({ nodes: [{ ...node(), type: "hexagon" }], edges: [] }),
+      validateDoc({ nodes: [{ ...node(), type: "blob" }], edges: [] }),
     ).toBeNull();
+    expect(
+      validateDoc({ nodes: [{ ...node(), fontSize: "big" }], edges: [] }),
+    ).toBeNull();
+  });
+
+  it("accepts every v3 node type and the optional fontSize", () => {
+    const types = ["rect", "ellipse", "diamond", "triangle", "hexagon", "parallelogram", "cylinder", "text"];
+    const doc = validateDoc({
+      nodes: types.map((type, i) => ({ ...node({ id: `n${i}` }), type })),
+      edges: [],
+    });
+    expect(doc).not.toBeNull();
+    expect(doc!.nodes).toHaveLength(types.length);
+    expect(validateDoc({ nodes: [{ ...node(), fontSize: 32 }], edges: [] })).not.toBeNull();
+  });
+
+  it("loadLocal falls back to the v2 autosave key (one-way migration)", () => {
+    const store = new Map<string, string>();
+    const fake = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    (globalThis as Record<string, unknown>).localStorage = fake;
+    try {
+      const doc = samplePathway();
+      store.set("plexus.doc.v2", JSON.stringify({ v: 2, doc }));
+      expect(loadLocal()).toEqual(doc);
+      // A v3 payload wins over the legacy key.
+      const other = { nodes: [node({ id: "solo" })], edges: [] };
+      store.set("plexus.doc.v3", JSON.stringify({ v: 3, doc: other }));
+      expect(loadLocal()?.nodes[0]?.id).toBe("solo");
+    } finally {
+      delete (globalThis as Record<string, unknown>).localStorage;
+    }
   });
 
   it("drops edges that reference missing nodes instead of rejecting the doc", () => {

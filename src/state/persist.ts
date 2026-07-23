@@ -6,10 +6,21 @@ import type { DiagramEdge, DiagramNode, Doc, EdgeEnd } from "../types";
  * loads as null rather than poisoning the editor state.
  */
 
-const STORAGE_KEY = "plexus.doc.v2";
-const SCHEMA_VERSION = 2;
+const STORAGE_KEY = "plexus.doc.v3";
+/** Autosave keys from earlier schema versions, read once for migration. */
+const LEGACY_KEYS = ["plexus.doc.v2"];
+const SCHEMA_VERSION = 3;
 
-const NODE_TYPES = new Set(["rect", "ellipse", "diamond", "text"]);
+const NODE_TYPES = new Set([
+  "rect",
+  "ellipse",
+  "diamond",
+  "triangle",
+  "hexagon",
+  "parallelogram",
+  "cylinder",
+  "text",
+]);
 
 function isFiniteNumber(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x);
@@ -34,7 +45,8 @@ function validNode(x: unknown): x is DiagramNode {
     isFiniteNumber(o.w) &&
     isFiniteNumber(o.h) &&
     typeof o.label === "string" &&
-    (o.fill === undefined || typeof o.fill === "string")
+    (o.fill === undefined || typeof o.fill === "string") &&
+    (o.fontSize === undefined || isFiniteNumber(o.fontSize))
   );
 }
 
@@ -92,8 +104,13 @@ export function saveLocal(doc: Doc): void {
 
 export function loadLocal(): Doc | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? parseDocJson(raw) : null;
+    for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const doc = parseDocJson(raw);
+      if (doc) return doc; // older payloads validate forward as-is
+    }
+    return null;
   } catch {
     return null;
   }

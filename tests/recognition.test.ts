@@ -67,6 +67,40 @@ function diamondStroke(x: number, y: number, w: number, h: number, n = 120): Str
   return pts;
 }
 
+/** Trace any closed polygon's perimeter, stopping just short of closing. */
+function polygonStroke(verts: Point[], n = 120): Stroke {
+  const pts: Stroke = [];
+  const per = n * 0.985;
+  const m = verts.length;
+  for (let i = 0; i < per; i++) {
+    const t = (i / n) * m;
+    const a = verts[Math.floor(t) % m]!;
+    const b = verts[(Math.floor(t) + 1) % m]!;
+    const f = t - Math.floor(t);
+    pts.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  }
+  return pts;
+}
+
+function triangleStroke(x: number, y: number, w: number, h: number): Stroke {
+  return polygonStroke([
+    { x: x + w / 2, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ]);
+}
+
+function hexagonStroke(x: number, y: number, w: number, h: number): Stroke {
+  return polygonStroke([
+    { x: x + 0.25 * w, y },
+    { x: x + 0.75 * w, y },
+    { x: x + w, y: y + h / 2 },
+    { x: x + 0.75 * w, y: y + h },
+    { x: x + 0.25 * w, y: y + h },
+    { x, y: y + h / 2 },
+  ]);
+}
+
 function lineStroke(a: Point, b: Point, bow = 0, n = 40): Stroke {
   const pts: Stroke = [];
   const nx = -(b.y - a.y);
@@ -123,6 +157,23 @@ describe("classifyStroke — nodes", () => {
   it("still calls an axis-aligned rectangle a rect, not a diamond", () => {
     const rec = classifyStroke(jitter(rectStroke(100, 100, 200, 120), 2.5, 31));
     expect(rec).toMatchObject({ kind: "node", type: "rect" });
+  });
+
+  it("recognizes a jittered triangle (3 corners, half-full bbox) as a triangle", () => {
+    const rec = classifyStroke(jitter(triangleStroke(150, 120, 200, 160), 2.5, 37));
+    expect(rec).toMatchObject({ kind: "node", type: "triangle" });
+  });
+
+  it("recognizes a jittered flat-top hexagon as a hexagon", () => {
+    const rec = classifyStroke(jitter(hexagonStroke(120, 140, 220, 130), 2.5, 41));
+    expect(rec).toMatchObject({ kind: "node", type: "hexagon" });
+  });
+
+  it("keeps sloppy rectangles as rects even at other jitter seeds (no hexagon drift)", () => {
+    for (const seed of [43, 47, 53, 59, 61]) {
+      const rec = classifyStroke(jitter(rectStroke(100, 100, 210, 130), 3, seed));
+      expect(rec).toMatchObject({ kind: "node", type: "rect" });
+    }
   });
 
   it("clamps tiny closed sketches to the minimum node size, keeping the center", () => {
@@ -220,6 +271,31 @@ describe("snapping and routing", () => {
     expect(routed).toMatchObject({ x1: 20, y1: 30 });
     const end = snapEnd({ x: 20, y: 30 }, [rectNode]);
     expect(isNodeRef(end)).toBe(false);
+  });
+
+  it("clips against a triangle's actual edges, not its bbox", () => {
+    const tri: DiagramNode = { id: "t", type: "triangle", x: 0, y: 0, w: 200, h: 100, label: "" };
+    // Straight up from the center (100, 66.7... center is bbox center: 100,50):
+    // the ray hits a slanted side, x stays 100 but y > 0 (bbox top would be 0).
+    const up = borderPoint(tri, { x: 100, y: -500 });
+    expect(up.x).toBeCloseTo(100, 5);
+    expect(up.y).toBeCloseTo(0, 5); // apex is exactly at (100, 0)
+    // Straight right: hits the right slanted edge between apex and (200,100).
+    const right = borderPoint(tri, { x: 900, y: 50 });
+    expect(right.y).toBeCloseTo(50, 5);
+    expect(right.x).toBeCloseTo(150, 5); // edge from (100,0) to (200,100) at y=50 → x=150
+  });
+
+  it("clips against a hexagon's slanted sides", () => {
+    const hex: DiagramNode = { id: "h", type: "hexagon", x: 0, y: 0, w: 200, h: 100, label: "" };
+    // Straight right from center exits at the right vertex (200, 50).
+    const p = borderPoint(hex, { x: 999, y: 50 });
+    expect(p.x).toBeCloseTo(200, 5);
+    expect(p.y).toBeCloseTo(50, 5);
+    // 45° down-right hits the lower-right slant, inside the bbox.
+    const q = borderPoint(hex, { x: 200, y: 150 });
+    expect(q.x).toBeLessThan(200);
+    expect(q.y).toBeLessThan(100.0001);
   });
 
   it("clips against a diamond border along its rhombus edges", () => {

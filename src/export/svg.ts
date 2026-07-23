@@ -1,5 +1,6 @@
 import type { DiagramNode, Doc } from "../types";
 import { routeEdge } from "../recognition/snap";
+import { cylinderCapRy, cylinderPath, shapePoints } from "../geometry/shapes";
 
 const PADDING = 32;
 const ARROW_ID = "plexus-arrow";
@@ -44,24 +45,28 @@ function extentOf(doc: Doc): Extent {
 }
 
 const LABEL_FAMILY = `font-family="'IBM Plex Mono', ui-monospace, monospace"`;
-const LABEL_FONT = `${LABEL_FAMILY} font-size="15" fill="#23262c"`;
 
 function nodeMarkup(n: DiagramNode): string {
   const cx = n.x + n.w / 2;
   const cy = n.y + n.h / 2;
   const fill = n.fill ?? "#ffffff";
+  const stroke = `fill="${esc(fill)}" stroke="#23262c" stroke-width="2"`;
   let shape = "";
   if (n.type === "ellipse") {
-    shape = `<ellipse cx="${cx}" cy="${cy}" rx="${n.w / 2}" ry="${n.h / 2}" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
+    shape = `<ellipse cx="${cx}" cy="${cy}" rx="${n.w / 2}" ry="${n.h / 2}" ${stroke}/>`;
   } else if (n.type === "rect") {
-    shape = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
-  } else if (n.type === "diamond") {
-    const pts = `${cx},${n.y} ${n.x + n.w},${cy} ${cx},${n.y + n.h} ${n.x},${cy}`;
-    shape = `<polygon points="${pts}" fill="${esc(fill)}" stroke="#23262c" stroke-width="2"/>`;
+    shape = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8" ${stroke}/>`;
+  } else if (n.type === "cylinder") {
+    const ry = cylinderCapRy(n.w, n.h);
+    shape =
+      `<path d="${cylinderPath(n.x, n.y, n.w, n.h)}" ${stroke}/>` +
+      `<ellipse cx="${cx}" cy="${n.y + ry}" rx="${n.w / 2}" ry="${ry}" ${stroke}/>`;
+  } else if (n.type !== "text") {
+    shape = `<polygon points="${shapePoints(n.type, n.x, n.y, n.w, n.h)}" ${stroke}/>`;
   }
   // "text" nodes export as pure text — no shape markup at all.
   const label = n.label
-    ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" ${LABEL_FONT}>${esc(n.label)}</text>`
+    ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" ${LABEL_FAMILY} font-size="${n.fontSize ?? 15}" fill="#23262c">${esc(n.label)}</text>`
     : "";
   return shape + label;
 }
