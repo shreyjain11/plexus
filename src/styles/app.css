@@ -591,6 +591,186 @@ body {
   color: var(--rail-text);
 }
 
+/* ---------- Voice panel ---------- */
+.voice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  border-top: 1px solid var(--rail-line);
+}
+.voice__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.voice__disable {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--rail-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.voice__disable:hover {
+  color: var(--rail-text);
+}
+.voice__mic {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px dashed var(--rail-line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease;
+}
+.voice__mic:hover {
+  background: var(--rail-raised);
+  border-color: var(--accent);
+}
+.voice__mic--live {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.voice__pulse {
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+.voice__live {
+  min-height: 30px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--rail-text-dim);
+}
+.voice__interim {
+  color: var(--rail-text);
+}
+.voice__last {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.voice__last em {
+  font-style: normal;
+  color: var(--rail-text);
+}
+.voice__last--warn em {
+  color: #d79a6a;
+}
+.voice__detail {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.voice__hint {
+  opacity: 0.8;
+}
+.voice__note {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--rail-text-dim);
+}
+.voice__note--warn {
+  color: #d79a6a;
+}
+.voice__form {
+  display: flex;
+  gap: 6px;
+}
+.voice__input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--rail-line);
+  border-radius: var(--radius-s);
+  background: var(--rail-raised);
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+.voice__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.voice__run {
+  padding: 7px 11px;
+  border: 1px solid var(--rail-line);
+  border-radius: var(--radius-s);
+  background: var(--rail-raised);
+  color: var(--rail-text);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.voice__run:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.voice__run:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.voice__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.voice__chip {
+  padding: 3px 8px;
+  border: 1px solid var(--rail-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rail-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice__chip:hover {
+  color: var(--rail-text);
+  border-color: var(--accent);
+}
+
 /* ---------- Status chip + zoom control ---------- */
 .status {
   position: absolute;
@@ -989,6 +1169,32 @@ body {
 .palette__item--sel .palette__hint {
   color: rgba(255, 255, 255, 0.85);
   border-color: rgba(255, 255, 255, 0.3);
+}
+
+.help__sub {
+  margin: 16px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rail-text-dim);
+}
+.help__say {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.help__say li {
+  padding: 3px 9px;
+  border: 1px solid var(--rail-line);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--rail-text-dim);
 }
 
 .help__foot {

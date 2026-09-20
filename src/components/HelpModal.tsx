@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { EXAMPLE_PHRASES } from "../voice/grammar";
 
 const SHORTCUTS: Array<[string, string]> = [
   ["D", "Draw mode"],
@@ -7,6 +8,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["W", "Write mode — hand-write letters & digits"],
   ["⌫ (writing)", "Erase the last written character"],
   ["A", "Toggle arrowheads on new connectors"],
+  ["M", "Start / stop voice commands"],
   ["⌘/Ctrl K", "Command palette — every action, fuzzy-searched"],
   ["⌘/Ctrl Z", "Undo"],
   ["⌘/Ctrl ⇧ Z", "Redo"],
@@ -59,6 +61,12 @@ export function HelpModal({
             </div>
           ))}
         </dl>
+        <h3 className="help__sub">Say it — or type it in the rail</h3>
+        <ul className="help__say">
+          {EXAMPLE_PHRASES.map((phrase) => (
+            <li key={phrase}>{phrase}</li>
+          ))}
+        </ul>
         <footer className="help__foot">
           <button type="button" className="help__replay" onClick={onReplayTour}>
             Replay the guided tour

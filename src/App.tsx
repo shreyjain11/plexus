@@ -3,6 +3,7 @@ import { Canvas, ZOOM_MAX, ZOOM_MIN, type FramePreview, type Mode, type ViewStat
 import { Toolbar, type PaletteShape } from "./components/Toolbar";
 import { Hud, type HudReadout } from "./components/Hud";
 import { CameraPanel } from "./components/CameraPanel";
+import { VoicePanel } from "./components/VoicePanel";
 import { Tour, TOUR_KEY, type TourSnapshot } from "./components/Tour";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { HelpModal } from "./components/HelpModal";
@@ -17,7 +18,9 @@ import { downloadSvg } from "./export/svg";
 import { downloadPng } from "./export/png";
 import { MoonIcon, SunIcon } from "./components/icons";
 import { usePrefersReducedMotion } from "./input/usePrefersReducedMotion";
-import type { NodeType, Point } from "./types";
+import { planOps, type Effect } from "./voice/plan";
+import { useVoice, type VoiceApply } from "./voice/useVoice";
+import { DEFAULT_NODE_SIZE, type Doc, type NodeType, type Point } from "./types";
 
 const GHOST_MS = 240;
 const SNAP_MS = 460;
@@ -40,15 +43,7 @@ const SHAPE_LABEL: Record<NodeType, string> = {
 };
 
 /** Default sizes for palette inserts (also seeds the two-hand frame preview). */
-const INSERT_SIZE: Record<Exclude<NodeType, "text">, { w: number; h: number }> = {
-  rect: { w: 160, h: 100 },
-  ellipse: { w: 150, h: 96 },
-  diamond: { w: 170, h: 104 },
-  triangle: { w: 165, h: 120 },
-  hexagon: { w: 180, h: 100 },
-  parallelogram: { w: 180, h: 96 },
-  cylinder: { w: 140, h: 118 },
-};
+const { text: _textSize, ...INSERT_SIZE } = DEFAULT_NODE_SIZE;
 
 function initState(base: DocState): DocState {
   const restored = loadLocal();
@@ -104,6 +99,8 @@ export function App() {
 
   const nodesRef = useRef(state.doc.nodes);
   nodesRef.current = state.doc.nodes;
+  const docRef = useRef(state.doc);
+  docRef.current = state.doc;
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const arrowRef = useRef(arrow);
@@ -363,6 +360,84 @@ export function App() {
     markAdded(id, null);
   }, [markAdded]);
 
+  // ----- voice commands -----
+  /** Everything a plan asks for that is not a document edit. */
+  const runEffect = useCallback(
+    (fx: Effect, doc: Doc) => {
+      switch (fx.kind) {
+        case "mode":
+          setMode(fx.mode);
+          return;
+        case "arrows":
+          setArrow(fx.on);
+          return;
+        case "theme":
+          setTheme(fx.theme);
+          return;
+        case "zoom":
+          zoomBy(fx.dir === "in" ? 1.2 : fx.dir === "out" ? 1 / 1.2 : 0);
+          return;
+        case "export":
+          if (fx.format === "svg") downloadSvg(doc);
+          else void downloadPng(doc);
+          return;
+        case "file":
+          if (fx.action === "save") downloadDocJson(doc);
+          else openAction();
+          return;
+        case "history":
+          dispatch({ type: fx.action });
+          return;
+        case "canvas":
+          dispatch({ type: fx.action === "clear" ? "clear" : "load-sample" });
+          return;
+        case "help":
+          setHelpOpen(true);
+          return;
+      }
+    },
+    [zoomBy, openAction],
+  );
+
+  const voiceApply = useCallback<VoiceApply>(
+    (ops) => {
+      const before = docRef.current;
+      const plan = planOps(ops, {
+        doc: before,
+        selection: selectionRef.current,
+        arrowDefault: arrowRef.current,
+        newId: uid,
+      });
+
+      if (plan.doc !== before || plan.selection !== selectionRef.current) {
+        dispatch({ type: "replace-doc", doc: plan.doc, selection: plan.selection });
+      }
+      // Anything newly created is there to be edited, so surface the handles —
+      // but only before effects run, so an explicit "draw mode" still wins.
+      if (plan.added.length > 0) setMode("select");
+      for (const fx of plan.effects) runEffect(fx, plan.doc);
+      for (const id of plan.added) pulse(id);
+
+      const ok = plan.problems.length === 0 && plan.notes.length > 0;
+      const detail =
+        plan.notes.length > 0
+          ? [...plan.notes, ...plan.problems].join(" · ")
+          : plan.problems.join(" · ") || "nothing to do";
+      flash(detail.toUpperCase(), ok ? "ok" : "warn");
+      return { ok, detail };
+    },
+    [flash, pulse, runEffect],
+  );
+
+  const voiceLabels = useCallback(
+    () => docRef.current.nodes.map((n) => n.label.trim()).filter((l) => l !== ""),
+    [],
+  );
+
+  const voice = useVoice({ apply: voiceApply, labels: voiceLabels });
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+
   // ----- keyboard shortcuts -----
   const nudgeAt = useRef(0);
   useEffect(() => {
@@ -422,6 +497,7 @@ export function App() {
       else if (key === "t") setMode("text");
       else if (key === "w") setMode("write");
       else if (key === "a") setArrow((v) => !v);
+      else if (key === "m") voiceRef.current.toggle();
       else if (e.key === "Delete" || e.key === "Backspace") {
         // While composing in Write mode, Backspace erases the last character.
         if (e.key === "Backspace" && modeRef.current === "write" && composerRef.current.backspace()) {
@@ -497,6 +573,15 @@ export function App() {
     { id: "export-png", section: "File", title: "Export PNG", keywords: "raster image download", run: exportPngAction },
     { id: "clear", section: "File", title: "Clear canvas", keywords: "delete everything reset", run: () => dispatch({ type: "clear" }) },
     { id: "sample", section: "File", title: "Load sample pathway", keywords: "demo example", run: () => dispatch({ type: "load-sample" }) },
+    {
+      id: "voice",
+      section: "Voice",
+      title: voice.listening ? "Stop listening" : "Start listening",
+      hint: "M",
+      keywords: "speech microphone dictate say talk",
+      run: voice.toggle,
+    },
+    { id: "tidy", section: "Voice", title: "Tidy the layout", keywords: "arrange auto layout organise align", run: () => void voice.run("tidy up") },
     { id: "tour", section: "Help", title: "Replay the guided tour", keywords: "onboarding tutorial", run: () => setTourOpen(true) },
     { id: "help", section: "Help", title: "Keyboard shortcuts", hint: "?", keywords: "keys reference", run: () => setHelpOpen(true) },
   ];
@@ -548,6 +633,10 @@ export function App() {
         />
 
         <div className="rail__spacer" />
+
+        <div data-tour="voice">
+          <VoicePanel voice={voice} />
+        </div>
 
         <div data-tour="camera">
           <CameraPanel hand={hand} />

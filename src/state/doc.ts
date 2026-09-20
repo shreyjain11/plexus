@@ -33,7 +33,13 @@ export type DocAction =
   | { type: "redo" }
   | { type: "clear" }
   | { type: "load-doc"; doc: Doc }
-  | { type: "load-sample" };
+  | { type: "load-sample" }
+  /**
+   * Swap in a document computed elsewhere, as one undo entry. Used by voice
+   * commands, where a single utterance can add several nodes and edges at
+   * once and must still undo in one step.
+   */
+  | { type: "replace-doc"; doc: Doc; selection: Selection | null };
 
 const UNDO_CAP = 100;
 
@@ -210,6 +216,16 @@ export function docReducer(state: DocState, action: DocAction): DocState {
 
     case "load-sample":
       return mutate(state, samplePathway(), null);
+
+    case "replace-doc":
+      // An unchanged document must not burn an undo slot — a command that only
+      // moved the selection should not be undoable as a document edit.
+      if (action.doc === state.doc) {
+        return state.selection === action.selection
+          ? state
+          : { ...state, selection: action.selection };
+      }
+      return mutate(state, action.doc, action.selection);
   }
 }
 

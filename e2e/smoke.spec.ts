@@ -443,6 +443,85 @@ test("⌘K command palette fuzzy-runs an action", async ({ page }) => {
   await expect(page.locator(".palette")).toHaveCount(0);
 });
 
+// ---------------------------------------------------------------------------
+// v4: voice commands
+//
+// Driven through the panel's text box rather than a microphone: it runs the
+// exact same parse → plan → commit pipeline that speech does, so these cover
+// the real code path without needing audio in CI.
+// ---------------------------------------------------------------------------
+
+test("a typed voice command builds a labelled graph as one undo step", async ({ page }) => {
+  const input = page.getByTestId("voice-input");
+  await input.fill("connect intake to review to ship");
+  await input.press("Enter");
+
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(3);
+  await expect(page.locator(".node__label")).toHaveText(["Intake", "Review", "Ship"]);
+  await expect(page.locator(".edge__line")).toHaveCount(2);
+
+  // The whole utterance is a single history entry.
+  await input.blur();
+  await page.keyboard.press(`${MOD}+z`);
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(0);
+});
+
+test("voice keeps editing the node it just created", async ({ page }) => {
+  const input = page.getByTestId("voice-input");
+  await input.fill("add a database called store");
+  await input.press("Enter");
+  await expect(page.locator(".node--cylinder path.node__shape")).toHaveCount(1);
+
+  await input.fill("make it orange");
+  await input.press("Enter");
+  await expect(page.locator(".node--cylinder path.node__shape")).toHaveAttribute("fill", "#fdf2e7");
+
+  await input.fill("rename store to archive");
+  await input.press("Enter");
+  await expect(page.locator(".node__label")).toHaveText("Archive");
+});
+
+test("voice drives app control as well as the document", async ({ page }) => {
+  const input = page.getByTestId("voice-input");
+  await input.fill("load the sample");
+  await input.press("Enter");
+  await expect(page.locator(".node__shape")).toHaveCount(6);
+
+  await input.fill("dark mode");
+  await input.press("Enter");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await input.fill("tidy up");
+  await input.press("Enter");
+  await expect(page.locator(".hud__value")).toHaveText("TIDIED THE LAYOUT");
+  await expect(page.locator(".node__shape")).toHaveCount(6); // rearranged, not lost
+});
+
+test("a phrase the parser does not know is reported, not guessed at", async ({ page }) => {
+  const input = page.getByTestId("voice-input");
+  await input.fill("summon a unicorn");
+  await input.press("Enter");
+
+  await expect(page.locator(".voice__detail")).toHaveText("not understood");
+  await expect(page.locator(".node__shape")).toHaveCount(0);
+});
+
+test("the voice panel stays usable without speech recognition", async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    delete w.SpeechRecognition;
+    delete w.webkitSpeechRecognition;
+  });
+  await page.reload();
+  await expect(page.locator(".canvas")).toBeVisible();
+
+  await expect(page.locator(".voice__note")).toContainText("no speech recognition");
+  const input = page.getByTestId("voice-input");
+  await input.fill("add a decision called pass");
+  await input.press("Enter");
+  await expect(page.locator(".node--diamond polygon.node__shape")).toHaveCount(1);
+});
+
 test("theme toggle flips to dark and survives a reload", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.locator(".theme-toggle").click();

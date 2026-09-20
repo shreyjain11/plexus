@@ -22,5 +22,5 @@
     "useDefineForClassFields": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "vite.config.ts"]
+  "include": ["src", "tests", "api", "e2e", "scripts", "vite.config.ts", "playwright.config.ts"]
 }

@@ -60,6 +60,21 @@ export const EMPTY_DOC: Doc = { nodes: [], edges: [] };
 export const MIN_NODE = { w: 40, h: 32 } as const;
 export const MIN_TEXT_NODE = { w: 60, h: 28 } as const;
 
+/**
+ * The size a node gets when it is created without being drawn — the shape
+ * palette, the ⌘K inserts, and voice commands all start here.
+ */
+export const DEFAULT_NODE_SIZE: Record<NodeType, { w: number; h: number }> = {
+  rect: { w: 160, h: 100 },
+  ellipse: { w: 150, h: 96 },
+  diamond: { w: 170, h: 104 },
+  triangle: { w: 165, h: 120 },
+  hexagon: { w: 180, h: 100 },
+  parallelogram: { w: 180, h: 96 },
+  cylinder: { w: 140, h: 118 },
+  text: { w: 200, h: 36 },
+};
+
 export function minSizeFor(type: NodeType): { w: number; h: number } {
   return type === "text" ? MIN_TEXT_NODE : MIN_NODE;
 }

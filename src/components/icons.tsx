@@ -197,6 +197,24 @@ export const CommandIcon = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+export const MicIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+    <path d="M12 18v3" />
+  </svg>
+);
+
+export const MicOffIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base} {...p}>
+    <path d="M9 9V6a3 3 0 0 1 5.9-.7" />
+    <path d="M15 11.2V12a3 3 0 0 1-4.2 2.8" />
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 10.2 5.3M18.5 11.5v.4" />
+    <path d="M12 18v3" />
+    <path d="M4 3l16 18" />
+  </svg>
+);
+
 export const ReplayIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base} {...p}>
     <path d="M4 5v5h5" />
