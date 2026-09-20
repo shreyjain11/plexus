@@ -23,8 +23,11 @@ import { env, pipeline, type FeatureExtractionPipeline } from "@huggingface/tran
  */
 const MODEL = "Xenova/all-MiniLM-L6-v2";
 
-// Nothing here ships with the app; everything comes from the HF CDN and then
-// the browser's own cache.
+// Nothing here ships with the app: the weights come from the HF CDN, the ONNX
+// runtime from transformers.js's own pinned jsDelivr copy, and after the first
+// visit both come from the browser's cache. Leaving the runtime's URL alone is
+// deliberate — which WASM variant is correct (asyncify / jspi / jsep) depends
+// on the visitor's browser, and transformers.js already decides that correctly.
 env.allowLocalModels = false;
 
 export interface EmbedRequest {

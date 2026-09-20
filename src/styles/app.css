@@ -1223,6 +1223,17 @@ body {
   color: var(--rail-text-dim);
 }
 
+.help__note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--rail-text-dim);
+}
+.help__note strong {
+  font-weight: 500;
+  color: var(--rail-text);
+}
+
 .help__foot {
   margin-top: 14px;
   padding-top: 12px;

@@ -21,7 +21,7 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-First visit? A **guided tour** walks you through the four core moves — and it advances itself the moment you actually do each one. (Replay it anytime from Help.)
+First visit? A **guided tour** walks you through the core moves — sketch, connect, label, hand-write, *say it*, and air-draw — and it advances itself the moment you actually do each one. (Replay it anytime from Help.)
 
 Then any of:
 
@@ -40,6 +40,7 @@ npm run build      # type-check + static bundle in dist/
 npm run preview    # serve the built bundle locally
 npm test           # recognition, state & voice unit tests (Vitest)
 npm run test:e2e   # end-to-end smoke tests (Playwright)
+npm run test:e2e:model  # opt-in: loads the real in-browser model (~30 MB)
 ```
 
 ---
@@ -117,6 +118,8 @@ It exists because tier 2's design turned out to be portable in a way that wasn't
 - **Half of it isn't the model at all.** Shapes, colours, directions, arrowheads and label spans are decided by the same lexical tables tier 1 uses. Embeddings are good at *what did they want*, indifferent to *which of 45 shape words was that*, and there's no reason to spend a neural judgement on a lookup.
 - **The canvas's own nouns are masked out.** Proper nouns dominate a short sentence's embedding while carrying no intent at all: *"wire intake through to the worker"* scored `connect` at 0.238 — below the floor, so `none` — until the node names were replaced with "this", which lifted it to 0.682. Intent is scored against the better of the raw and masked sentences. The same trap runs the other way, so **no prototype names anything that could be on someone's canvas**.
 - **Confidence is measured, not guessed.** The winner's margin over the runner-up becomes `tanh(gap / 2T)`, which in the two-option case is exactly the `2p − 1` that Jev reports — so one set of gates governs both tiers, and `delete` still needs its higher bar. `T` was fitted to the real gap distribution from `scripts/local-probe.ts` (0.07–0.59 when clearly right, 0.02–0.03 when genuinely arguable), not picked by eye.
+
+The ONNX runtime beside the model is **not** bundled, and that is deliberate rather than an oversight: which WASM variant is correct (asyncify / jspi / jsep) depends on the visitor's browser, so transformers.js picks one and fetches its own pinned copy. Vite would otherwise emit a 27 MB binary into `dist/` that nothing ever requests — `vite.config.ts` deletes it, which takes the build from 28 MB to 1.3 MB. Deleting an asset a chunk still references is only safe while that reference stays dead, so `npm run test:e2e:model` loads the real model in a real browser and fails on any 404.
 
 Honest limits: it is a 22 MB ranker, not a reasoner, so tier 2 remains the better parser and is tried first where a key exists. On the live probe it handles 13 of 14 awkward phrasings, in 3–15 ms each after a ~80 ms warm-up. The fourteenth (*"nah, that's not what i meant"*) it declines rather than guesses, which is the intended failure. **Nothing loads unless you ask**: the tier is a dynamic import behind the checkbox, transformers.js is provably absent from the entry chunk, and an e2e test fails the build if a fresh page so much as requests a `.wasm`.
 
@@ -227,6 +230,8 @@ npx vite-node scripts/jev-probe.ts
 ```bash
 npx vite-node scripts/local-probe.ts
 ```
+
+`npm run test:e2e:model` is the browser-side counterpart: it ticks the real checkbox, waits out the real download, parses a sentence the grammar declined, and then severs every remote route to prove the "runs offline" claim on the label. Also gated (`E2E_LOCAL_MODEL`), also worth running after touching the worker or the bundler.
 
 **Never prefix these with `VITE_`.** That's the one footgun here: a `VITE_`-prefixed variable is inlined into the client bundle and shipped to every visitor. These are read with `process.env` inside the function, so the key stays server-side. `.env.local` is gitignored.
 

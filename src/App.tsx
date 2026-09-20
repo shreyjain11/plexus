@@ -543,6 +543,7 @@ export function App() {
     edges: state.doc.edges.length,
     labeled: labeledCount,
     glyphs: glyphCount,
+    commands: voice.ran,
     handRunning: hand.status === "running",
   };
 
@@ -582,6 +583,16 @@ export function App() {
       run: voice.toggle,
     },
     { id: "tidy", section: "Voice", title: "Tidy the layout", keywords: "arrange auto layout organise align", run: () => void voice.run("tidy up") },
+    {
+      id: "voice-local",
+      section: "Voice",
+      title:
+        voice.local.status === "off" || voice.local.status === "failed"
+          ? "Understand loose phrasing — download the model (~30 MB)"
+          : "Understand loose phrasing — turn off",
+      keywords: "ai model offline free local embedding natural language understand",
+      run: () => voice.setLocal(voice.local.status === "off" || voice.local.status === "failed"),
+    },
     { id: "tour", section: "Help", title: "Replay the guided tour", keywords: "onboarding tutorial", run: () => setTourOpen(true) },
     { id: "help", section: "Help", title: "Keyboard shortcuts", hint: "?", keywords: "keys reference", run: () => setHelpOpen(true) },
   ];

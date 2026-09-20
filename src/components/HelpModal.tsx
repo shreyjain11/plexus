@@ -67,6 +67,10 @@ export function HelpModal({
             <li key={phrase}>{phrase}</li>
           ))}
         </ul>
+        <p className="help__note">
+          Phrasing off this list? Tick <strong>Understand loose phrasing</strong> in the rail — a
+          small model downloads once (~30 MB), then reads the rest offline, free, on your machine.
+        </p>
         <footer className="help__foot">
           <button type="button" className="help__replay" onClick={onReplayTour}>
             Replay the guided tour

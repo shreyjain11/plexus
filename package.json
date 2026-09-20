@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:model": "E2E_LOCAL_MODEL=1 playwright test e2e/local-model.spec.ts"
   },
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.2.5",

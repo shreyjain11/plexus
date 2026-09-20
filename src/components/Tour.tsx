@@ -20,6 +20,8 @@ export interface TourSnapshot {
   labeled: number;
   /** Committed Write-mode glyphs this session. */
   glyphs: number;
+  /** Voice/typed commands run this session, successful or not. */
+  commands: number;
   handRunning: boolean;
 }
 
@@ -78,9 +80,17 @@ const STEPS: readonly Step[] = [
     done: (s, b) => s.glyphs > b.glyphs,
   },
   {
+    id: "say",
+    target: "voice",
+    eyebrow: "05 · SAY",
+    title: "Tell it what to build.",
+    body: "Type “add a database called Store and connect it to the box” — or hit the mic and say it. Tick “Understand loose phrasing” and a small model downloads once, then handles the sentences the plain rules don't, offline and free.",
+    done: (s, b) => s.commands > b.commands,
+  },
+  {
     id: "air",
     target: "camera",
-    eyebrow: "05 · AIR",
+    eyebrow: "06 · AIR",
     title: "Now try it in the air.",
     body: "Enable hand tracking and pinch thumb + index to ink. Pinch with both hands at once to frame a shape between them. (No camera handy? Skip ahead.)",
     done: (s) => s.handRunning,

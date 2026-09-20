@@ -92,6 +92,8 @@ export interface VoiceApi {
   interim: string;
   /** Recent commands, newest first. */
   log: VoiceEntry[];
+  /** Commands run this session, ever — `log` is capped, this is not. */
+  ran: number;
   /** True while a second-tier parser is being consulted. */
   thinking: boolean;
   /** The in-browser model tier: off, downloading, ready, or broken. */
@@ -127,6 +129,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
   );
   const [interim, setInterim] = useState("");
   const [log, setLog] = useState<VoiceEntry[]>([]);
+  const [ran, setRan] = useState(0);
   const [thinking, setThinking] = useState(false);
   const [local, setLocalState] = useState<LocalState>({ status: "off", progress: null });
 
@@ -148,6 +151,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
     entryId.current += 1;
     const entry: VoiceEntry = { id: entryId.current, text, ok, detail };
     setLog((prev) => [entry, ...prev].slice(0, LOG_CAP));
+    setRan((n) => n + 1);
   }, []);
 
   // The whole local tier — model, worker, prototypes — is loaded on demand, so
@@ -383,6 +387,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
     listening: status === "listening",
     interim,
     log,
+    ran,
     thinking,
     local,
     setLocal,

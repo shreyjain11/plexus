@@ -428,6 +428,33 @@ test("first-run guided tour advances on a real draw, and skip persists", async (
   await ctx.close();
 });
 
+test("the tour teaches voice, and a typed command satisfies that step", async ({ browser }) => {
+  // Voice is the headline feature; onboarding that never mentions it is a bug
+  // in the onboarding. The step must also be completable with no microphone,
+  // which is the same reason the text box exists.
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await expect(page.locator(".canvas")).toBeVisible();
+
+  const card = page.locator(".tour-card");
+  await page.getByRole("button", { name: "Start the tour" }).click();
+  // Skip forward to the voice step rather than performing four other actions.
+  for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "Skip step" }).click();
+  await expect(card).toContainText("Tell it what to build");
+  await expect(card).toContainText("Understand loose phrasing");
+
+  // The spotlight must be on the voice rail, not left on the last target.
+  await expect(page.locator('[data-tour="voice"] .voice__input')).toBeVisible();
+
+  await page.getByTestId("voice-input").fill("add a box called Signal");
+  await page.getByTestId("voice-input").press("Enter");
+  await expect(card).toContainText("Now try it in the air", { timeout: 4000 });
+
+  await page.getByRole("button", { name: "End tour" }).click();
+  await ctx.close();
+});
+
 test("⌘K command palette fuzzy-runs an action", async ({ page }) => {
   await page.keyboard.press(`${MOD}+k`);
   const input = page.locator(".palette__input");
