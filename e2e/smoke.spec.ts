@@ -522,6 +522,29 @@ test("the voice panel stays usable without speech recognition", async ({ page })
   await expect(page.locator(".node--diamond polygon.node__shape")).toHaveCount(1);
 });
 
+test("the in-browser model is offered but never loaded unasked", async ({ page }) => {
+  // The point of the toggle is that the 30 MB it costs is spent only on
+  // request. A regression here is invisible in the UI and expensive for the
+  // user, so it is worth asserting that nothing is fetched until it is ticked.
+  const fetched: string[] = [];
+  page.on("request", (r) => {
+    const url = r.url();
+    if (/huggingface|\.onnx|\.wasm/.test(url)) fetched.push(url);
+  });
+
+  const toggle = page.getByTestId("voice-local");
+  await expect(toggle).not.toBeChecked();
+  await expect(page.locator(".voice__opt-note")).toContainText("30 MB");
+
+  // Exercise the whole pipeline — the offline grammar must still answer alone.
+  const input = page.getByTestId("voice-input");
+  await input.fill("add a box called ready");
+  await input.press("Enter");
+  await expect(page.locator(".node rect.node__shape")).toHaveCount(1);
+
+  expect(fetched).toEqual([]);
+});
+
 test("theme toggle flips to dark and survives a reload", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.locator(".theme-toggle").click();

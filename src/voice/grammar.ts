@@ -152,12 +152,25 @@ const COLORS: Readonly<Record<string, string>> = {
   stone: SWATCH.grey,
   white: SWATCH.auto,
   blank: SWATCH.auto,
+  plain: SWATCH.auto,
   none: SWATCH.auto,
   auto: SWATCH.auto,
   automatic: SWATCH.auto,
   default: SWATCH.auto,
   transparent: "",
 };
+
+/**
+ * Resolve a spoken colour word to the *name* of its swatch, e.g. "navy" →
+ * "blue". The local tier needs the name rather than the hex, because the
+ * question it answers offers swatch names as its options.
+ */
+export function swatchFromWord(word: string): SwatchName | null {
+  const hex = COLORS[word.trim().toLowerCase()];
+  if (hex === undefined) return null;
+  const names = Object.keys(SWATCH) as SwatchName[];
+  return names.find((n) => SWATCH[n] === hex) ?? null;
+}
 
 const NUMBER_WORDS: Readonly<Record<string, number>> = {
   a: 1,

@@ -13,8 +13,9 @@ import { MicIcon, MicOffIcon } from "./icons";
  */
 export function VoicePanel({ voice }: { voice: VoiceApi }) {
   const [draft, setDraft] = useState("");
-  const { status, listening, interim, log, thinking, supported } = voice;
+  const { status, listening, interim, log, thinking, supported, local } = voice;
   const last = log[0];
+  const pct = local.progress === null ? null : Math.round(local.progress * 100);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -88,6 +89,34 @@ export function VoicePanel({ voice }: { voice: VoiceApi }) {
           Run
         </button>
       </form>
+
+      {/*
+        Opt-in, never automatic: turning this on downloads ~30 MB — the runtime
+        and the model. That is a fine trade for someone who wants loose phrasing
+        to work, and a rude one to spend on someone's data plan without asking.
+      */}
+      <label className="voice__opt">
+        <input
+          type="checkbox"
+          checked={local.status !== "off" && local.status !== "failed"}
+          onChange={(e) => voice.setLocal(e.target.checked)}
+          data-testid="voice-local"
+        />
+        <span>
+          Understand loose phrasing
+          <span className="voice__opt-note">
+            {local.status === "loading"
+              ? pct === null
+                ? "starting…"
+                : `downloading ${pct}%`
+              : local.status === "ready"
+                ? "on · runs offline, free"
+                : local.status === "failed"
+                  ? "couldn’t load the model"
+                  : "30 MB one-off download · then free"}
+          </span>
+        </span>
+      </label>
 
       <div className="voice__chips">
         {EXAMPLE_PHRASES.slice(0, 3).map((phrase) => (

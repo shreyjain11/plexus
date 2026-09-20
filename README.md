@@ -30,7 +30,7 @@ Then any of:
 - **Text tool** (`T`) — click anywhere to place a text box and start typing.
 - **Write mode** (`W`) — hand-write letters and digits; each one is recognized and typed as clean text (see below).
 - **Hand tracking** — click **Enable hand tracking** in the left rail, allow the camera, and pinch thumb-to-index to draw. Pinch **both** hands at once to frame the armed palette shape between them.
-- **Voice** (`M`) — start listening and talk: *"add a box called Signal"*, *"connect signal to prep"*, *"make it blue"*, *"tidy up"*. There's a text box under the mic that runs the identical commands if you'd rather type them.
+- **Voice** (`M`) — start listening and talk: *"add a box called Signal"*, *"connect signal to prep"*, *"make it blue"*, *"tidy up"*. There's a text box under the mic that runs the identical commands if you'd rather type them, and an opt-in in-browser model for when your phrasing wanders off the grammar — free, offline, no key.
 - **⌘K** — the command palette runs every action by fuzzy search.
 
 Don't want to start from a blank page? Hit **Sample** to load a labeled pathway. Your work **autosaves** to the browser, so a reload picks up where you left off.
@@ -87,7 +87,7 @@ A small mirrored webcam preview shows both detected hand skeletons and a pen up/
 
 ### Voice commands
 
-Press `M` (or hit the mic in the rail) and talk. Speech → text uses the browser's built-in **Web Speech API**; text → diagram is Plexus's own two-tier parser (`src/voice/`). Under the mic is a **text box that runs the exact same pipeline** — it's the whole feature in Firefox, in a shared room, or when the mic is busy, and it's what the e2e suite drives.
+Press `M` (or hit the mic in the rail) and talk. Speech → text uses the browser's built-in **Web Speech API**; text → diagram is Plexus's own three-tier parser (`src/voice/`). Under the mic is a **text box that runs the exact same pipeline** — it's the whole feature in Firefox, in a shared room, or when the mic is busy, and it's what the e2e suite drives.
 
 **Tier 1 — a deterministic grammar** (`grammar.ts`). Pure, offline, instant, and the only tier most sentences need. An utterance is split into clauses (`;` `.` `and then` `next up` …, never a bare "and", so *"connect A and B"* survives), then each clause runs through ordered rules:
 
@@ -108,6 +108,18 @@ It is backed by [TypeSafe](https://typesafe.ai)'s **Jev**, which is not a text g
 
 Every question is asked in one batched round trip, and whatever comes back is re-validated against the same op schema (`ops.ts` `validateOps`) **on the server and again in the browser** — this tier can only emit ops the grammar could have emitted.
 
+**Tier 3 — a free model that runs in your browser** (`src/voice/local/`). Tier 2 needs somebody's API key. This one needs nothing: tick **"Understand loose phrasing"** in the rail and Plexus downloads a ~30 MB sentence embedder ([`Xenova/all-MiniLM-L6-v2`](https://huggingface.co/Xenova/all-MiniLM-L6-v2), int8) via [transformers.js](https://github.com/huggingface/transformers.js) and runs it on WASM in a Web Worker. After that first fetch it is **cached, offline, private, and free forever** — no key, no route, no request leaves the page, and nothing about your canvas is transmitted anywhere.
+
+It exists because tier 2's design turned out to be portable in a way that wasn't the point at the time:
+
+- **It reuses tier 2's decoder verbatim.** Tier 2 already worked by *enumerating the options and having something pick*, which means `decode()` never cared who answered. The local tier answers the same question set and hands it to the same `decode()` — so the two tiers cannot drift apart, because there is only one decoder and one op schema behind both.
+- **A ranker where tier 2 has a reasoner.** Each of the 30 intents carries a handful of *prototype phrasings* (`prototypes.ts`) rather than a description; the utterance and the prototypes are embedded once and compared by cosine. Prototypes beat descriptions here because an embedder scores *"scrap that last bit"* against *"undo the last thing"* far better than against a definition of undo.
+- **Half of it isn't the model at all.** Shapes, colours, directions, arrowheads and label spans are decided by the same lexical tables tier 1 uses. Embeddings are good at *what did they want*, indifferent to *which of 45 shape words was that*, and there's no reason to spend a neural judgement on a lookup.
+- **The canvas's own nouns are masked out.** Proper nouns dominate a short sentence's embedding while carrying no intent at all: *"wire intake through to the worker"* scored `connect` at 0.238 — below the floor, so `none` — until the node names were replaced with "this", which lifted it to 0.682. Intent is scored against the better of the raw and masked sentences. The same trap runs the other way, so **no prototype names anything that could be on someone's canvas**.
+- **Confidence is measured, not guessed.** The winner's margin over the runner-up becomes `tanh(gap / 2T)`, which in the two-option case is exactly the `2p − 1` that Jev reports — so one set of gates governs both tiers, and `delete` still needs its higher bar. `T` was fitted to the real gap distribution from `scripts/local-probe.ts` (0.07–0.59 when clearly right, 0.02–0.03 when genuinely arguable), not picked by eye.
+
+Honest limits: it is a 22 MB ranker, not a reasoner, so tier 2 remains the better parser and is tried first where a key exists. On the live probe it handles 13 of 14 awkward phrasings, in 3–15 ms each after a ~80 ms warm-up. The fourteenth (*"nah, that's not what i meant"*) it declines rather than guesses, which is the intended failure. **Nothing loads unless you ask**: the tier is a dynamic import behind the checkbox, transformers.js is provably absent from the entry chunk, and an e2e test fails the build if a fresh page so much as requests a `.wasm`.
+
 Everything downstream of parsing is one pure function (`plan.ts`): ops in, a whole new `Doc` out. That buys three things worth having:
 
 - **One utterance = one undo step**, however many nodes and edges it created (the `replace-doc` reducer action). A command that changed nothing doesn't burn an undo slot at all.
@@ -116,9 +128,9 @@ Everything downstream of parsing is one pure function (`plan.ts`): ops in, a who
 
 Anything the parser can't place comes back as `not understood` in the rail rather than a guess, and problems ride along with successes (*"Added Store · no node called “stoor”"*).
 
-Because every layer except the mic is pure, it's all testable: `tests/voice.test.ts` covers clause splitting, each rule, op validation of hostile input, placement/collision, layout, and the one-undo-entry guarantee, and the Playwright suite drives the real UI through the text box. Tier 2 is testable for the same reason — the question set and the answers → ops decoding are a pure module, so `tests/jev.test.ts` exercises the confidence gates and every branch of the decoder against recorded answer shapes, with no network and no key.
+Because every layer except the mic is pure, it's all testable: `tests/voice.test.ts` covers clause splitting, each rule, op validation of hostile input, placement/collision, layout, and the one-undo-entry guarantee, and the Playwright suite drives the real UI through the text box. Tier 2 is testable for the same reason — the question set and the answers → ops decoding are a pure module, so `tests/jev.test.ts` exercises the confidence gates and every branch of the decoder against recorded answer shapes, with no network and no key. Tier 3 takes its embedder as an argument, so `tests/local.test.ts` runs all 30 of its cases against a fake one: no model, no download, and similarity scores chosen to sit deliberately on the wrong side of each threshold.
 
-**Privacy note, stated plainly:** Chrome's Web Speech API is *server-side* — audio goes to Google, as it does for any site using it. Plexus adds nothing to that, and sends no audio anywhere itself. Tier 2, when enabled, sends only the leftover text plus your node labels to your own serverless route.
+**Privacy note, stated plainly:** Chrome's Web Speech API is *server-side* — audio goes to Google, as it does for any site using it. Plexus adds nothing to that, and sends no audio anywhere itself. Tier 2, when enabled, sends only the leftover text plus your node labels to your own serverless route. Tier 3 sends nothing at all — after the one-time model download it is entirely local, and works with the network off.
 
 ### Editing
 
@@ -178,7 +190,7 @@ Because every layer except the mic is pure, it's all testable: `tests/voice.test
 
 ## Deploy (Vercel)
 
-Plexus is a static single-page app. It needs no server and no keys — every feature above, voice included, works from `dist/` alone.
+Plexus is a static single-page app. It needs no server and no keys — every feature above, voice included, works from `dist/` alone. That covers the free in-browser model too: tier 3 is fetched from the public model host at runtime by the visitor's own browser, so a keyless static deploy still gets loose-phrasing understanding.
 
 ```bash
 npm i -g vercel
@@ -210,6 +222,12 @@ set -a && . ./.env.local && set +a
 npx vite-node scripts/jev-probe.ts
 ```
 
+`scripts/local-probe.ts` is its counterpart for tier 3, and needs **no key and no `.env.local`** — it downloads the model once and prints the top intents, the cosine scores, the confidence and the ops for fourteen awkward phrasings. It is out of `npm test` for the same reasons (a ~30 MB fetch, and output that's a judgement call), and it is the only way to catch the failure mode the unit tests structurally cannot: a fake embedder passes while a prototype is quietly wrong.
+
+```bash
+npx vite-node scripts/local-probe.ts
+```
+
 **Never prefix these with `VITE_`.** That's the one footgun here: a `VITE_`-prefixed variable is inlined into the client bundle and shipped to every visitor. These are read with `process.env` inside the function, so the key stays server-side. `.env.local` is gitignored.
 
 The route caps request size (400 chars of text, 60 labels), rate-limits per instance (40/min), runs the model at `temperature: 0` with `response_format: json_object`, times out upstream at 10 s, and never forwards the provider's error body to the browser.
@@ -227,7 +245,8 @@ Picked deliberately so the tool never blocks on a prompt:
 - **Autosave to `localStorage`, files on demand.** The single source of truth is still the in-memory document; a debounced copy is mirrored to `localStorage["plexus.doc.v3"]` (versioned `{v: 3, doc}`) purely so a reload doesn't lose work, and JSON save/open covers portability. No server, no account, no telemetry — nothing leaves the browser unless you Save.
 - **Undo and redo are snapshot stacks** (structural sharing keeps them cheap); any new edit clears the redo stack. History is intentionally *not* persisted.
 - **Voice is deterministic first, a model second.** A grammar you can read, test, and predict handles the sentences people actually say; the model route exists only to catch the long tail, is optional, and can only return ops the grammar could have returned. Nothing about the feature degrades when the route is off — it's *additive*, which is the only honest way to depend on a model.
-- **Where a model is used, it selects rather than writes.** Every value tier 2 can produce is one the code enumerated first — an intent from a fixed list, a colour from the palette, a node from the canvas, a label from the user's own words. There is no step where prose has to be parsed back into structure and no string the model authored, so the failure mode is "picked the wrong option", which confidence can gate, rather than "emitted something unparseable", which it can't.
+- **Where a model is used, it selects rather than writes.** Every value tier 2 or tier 3 can produce is one the code enumerated first — an intent from a fixed list, a colour from the palette, a node from the canvas, a label from the user's own words. There is no step where prose has to be parsed back into structure and no string the model authored, so the failure mode is "picked the wrong option", which confidence can gate, rather than "emitted something unparseable", which it can't.
+- **The paid tier is optional in both directions.** Because the answer format was the contract rather than the vendor, a free embedder running on the visitor's own CPU could be dropped in behind the same decoder — so understanding loose phrasing costs nobody a key, a bill, or a request. It's opt-in rather than automatic, because ~30 MB is a rude thing to spend on someone's data plan without asking, and it's a checkbox rather than a build flag, because whether that download is worth it is the visitor's call and not the deployer's.
 - **Voice mutations are one pure function.** `planOps(ops, ctx) → Doc` means an utterance is atomic: one undo entry, no half-applied command, and the whole thing is unit-testable without a browser, a microphone, or React.
 - **No keys in the client bundle, ever.** The one serverless function (`api/voice.ts`) reads its key from `process.env` and is inert without it; nothing is `VITE_`-prefixed. A second **disabled, unwired stub** lives at `api-stub/cleanup.ts.disabled`, showing where a future server-side "cleanup" key *would* live — it stays disabled.
 

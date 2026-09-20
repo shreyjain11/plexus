@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parseUtterance } from "./grammar";
 import { parseRemote, remoteDisabled } from "./remote";
 import type { VoiceOp } from "./ops";
+import type { LocalState } from "./local";
 
 /**
  * Speech capture and the command pipeline.
@@ -91,8 +92,12 @@ export interface VoiceApi {
   interim: string;
   /** Recent commands, newest first. */
   log: VoiceEntry[];
-  /** True while the optional remote parser is being consulted. */
+  /** True while a second-tier parser is being consulted. */
   thinking: boolean;
+  /** The in-browser model tier: off, downloading, ready, or broken. */
+  local: LocalState;
+  /** Turn the in-browser model on or off. Downloads on first enable. */
+  setLocal: (on: boolean) => void;
   start: () => void;
   stop: () => void;
   toggle: () => void;
@@ -101,6 +106,16 @@ export interface VoiceApi {
 }
 
 const LOG_CAP = 6;
+/** Remembers the opt-in, so the model is not re-downloaded-and-forgotten. */
+const LOCAL_KEY = "plexus.voice.local";
+
+function storedOptIn(): boolean {
+  try {
+    return localStorage.getItem(LOCAL_KEY) === "on";
+  } catch {
+    return false; // private mode, or storage disabled
+  }
+}
 /** Chrome ends a continuous session roughly every minute; restart quietly. */
 const RESTART_MS = 250;
 const MAX_BACKOFF_MS = 4000;
@@ -113,6 +128,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
   const [interim, setInterim] = useState("");
   const [log, setLog] = useState<VoiceEntry[]>([]);
   const [thinking, setThinking] = useState(false);
+  const [local, setLocalState] = useState<LocalState>({ status: "off", progress: null });
 
   const recRef = useRef<Recognizer | null>(null);
   const wantRef = useRef(false);
@@ -134,7 +150,48 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
     setLog((prev) => [entry, ...prev].slice(0, LOG_CAP));
   }, []);
 
-  /** Parse one utterance, escalating leftovers to the remote tier. */
+  // The whole local tier — model, worker, prototypes — is loaded on demand, so
+  // that a session that never opts in never downloads a byte of it. A static
+  // import would put it in the entry chunk's graph for everyone.
+  const localRef = useRef<typeof import("./local") | null>(null);
+  const loadLocal = useCallback(async () => {
+    localRef.current ??= await import("./local");
+    return localRef.current;
+  }, []);
+
+  const setLocal = useCallback(
+    (on: boolean) => {
+      try {
+        localStorage.setItem(LOCAL_KEY, on ? "on" : "off");
+      } catch {
+        /* storage disabled; the choice just won't survive a reload */
+      }
+      void loadLocal().then((mod) => {
+        if (on) void mod.enableLocal();
+        else mod.disableLocal();
+      });
+    },
+    [loadLocal],
+  );
+
+  // Subscribe once, and resume a previous opt-in. The unsubscribe is returned
+  // from inside the promise, so keep a flag for the case where the component
+  // unmounts before the dynamic import lands.
+  useEffect(() => {
+    let alive = true;
+    let off: (() => void) | undefined;
+    void loadLocal().then((mod) => {
+      if (!alive) return;
+      off = mod.onLocalState(setLocalState);
+      if (storedOptIn()) void mod.enableLocal();
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [loadLocal]);
+
+  /** Parse one utterance, escalating leftovers to whichever tiers are available. */
   const execute = useCallback(
     async (text: string): Promise<void> => {
       const said = text.trim();
@@ -143,11 +200,26 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
       const { ops, unparsed } = parseUtterance(said);
       let all: VoiceOp[] = ops;
 
-      if (unparsed.length > 0 && !remoteDisabled()) {
+      // Tier 1 handles the literal phrasings. Anything left is oblique enough
+      // to need a model, and there may be two to try: the hosted one if this
+      // deploy has a key, and the in-browser one if the user turned it on.
+      // Hosted goes first where both exist — it is the better parser — and the
+      // local tier picks up both the no-key deploy and the hosted tier's
+      // refusals, which cost nothing to retry.
+      if (unparsed.length > 0) {
+        const leftover = unparsed.join(". ");
         setThinking(true);
         try {
-          const remote = await parseRemote(unparsed.join(". "), { labels: labelsRef.current() });
-          if (remote.ops.length > 0) all = [...all, ...remote.ops];
+          if (!remoteDisabled()) {
+            const remote = await parseRemote(leftover, { labels: labelsRef.current() });
+            if (remote.ops.length > 0) all = [...all, ...remote.ops];
+          }
+          if (all.length === ops.length && localRef.current !== null) {
+            const found = await localRef.current.parseLocal(leftover, {
+              labels: labelsRef.current(),
+            });
+            if (found.ops.length > 0) all = [...all, ...found.ops];
+          }
         } finally {
           setThinking(false);
         }
@@ -312,6 +384,8 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
     interim,
     log,
     thinking,
+    local,
+    setLocal,
     start,
     stop,
     toggle,
