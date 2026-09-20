@@ -132,6 +132,13 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
   const [ran, setRan] = useState(0);
   const [thinking, setThinking] = useState(false);
   const [local, setLocalState] = useState<LocalState>({ status: "off", progress: null });
+  // The user's answer to the question, held separately from the loader's
+  // status. They are not the same thing for the first few hundred
+  // milliseconds: the tier is a dynamic import, so on a real connection
+  // nothing about `local` can change until a chunk arrives over the network.
+  // Driving the checkbox off the loader means a click that visibly does
+  // nothing, which reads as broken and invites a second click.
+  const [optIn, setOptIn] = useState<boolean>(storedOptIn);
 
   const recRef = useRef<Recognizer | null>(null);
   const wantRef = useRef(false);
@@ -165,6 +172,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
 
   const setLocal = useCallback(
     (on: boolean) => {
+      setOptIn(on);
       try {
         localStorage.setItem(LOCAL_KEY, on ? "on" : "off");
       } catch {
@@ -194,6 +202,25 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
       off?.();
     };
   }, [loadLocal]);
+
+  // A load that failed is not an opt-in any more: let the checkbox clear so a
+  // second click is a fresh attempt rather than a no-op.
+  useEffect(() => {
+    if (local.status === "failed") setOptIn(false);
+  }, [local.status]);
+
+  /**
+   * What the panel renders. Between the click and the chunk landing the loader
+   * still says "off" while the honest answer is "starting" — say that.
+   */
+  const shown: LocalState =
+    local.status === "failed"
+      ? local // a failure outranks the checkbox: say so rather than go quiet
+      : optIn
+        ? local.status === "off"
+          ? { status: "loading", progress: null }
+          : local
+        : { status: "off", progress: null };
 
   /** Parse one utterance, escalating leftovers to whichever tiers are available. */
   const execute = useCallback(
@@ -389,7 +416,7 @@ export function useVoice({ apply, labels }: UseVoiceOptions): VoiceApi {
     log,
     ran,
     thinking,
-    local,
+    local: shown,
     setLocal,
     start,
     stop,

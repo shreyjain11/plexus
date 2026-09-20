@@ -1,5 +1,7 @@
-import { MOVE_STEP, SWATCH, presentLabel, type SwatchName } from "./grammar";
-import { NODE_TYPES, type VoiceOp } from "./ops";
+// Extensions here for the same reason as in `api/voice.ts`: this module is
+// pulled into the serverless route, which Node loads as unbundled ESM.
+import { MOVE_STEP, SWATCH, presentLabel, type SwatchName } from "./grammar.js";
+import { NODE_TYPES, type VoiceOp } from "./ops.js";
 import type { NodeType } from "../types";
 
 /**

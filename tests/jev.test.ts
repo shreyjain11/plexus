@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseRemote, remoteDisabled, resetRemote } from "../src/voice/remote";
 import {
   DESTRUCTIVE_CONFIDENCE,
   NO_SPAN,
@@ -330,5 +331,70 @@ describe("decoding answers into ops", () => {
 
   it("still refuses a shaky clear", () => {
     expect(run("start over maybe", { intent: choice("clear", 0.6) }).ops).toEqual([]);
+  });
+});
+
+describe("standing down when the route cannot answer", () => {
+  // Production taught this one: the route deployed fine and then crashed on
+  // import, so it answered 500 rather than the 501 that means "no key here".
+  // The client kept asking, once per utterance, forever.
+  const withFetch = async (reply: () => Response | Promise<Response>, tries = 4) => {
+    const real = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (() => {
+      calls += 1;
+      return Promise.resolve(reply());
+    }) as typeof fetch;
+    try {
+      resetRemote();
+      for (let i = 0; i < tries; i += 1) await parseRemote("do a thing", { labels: [] });
+      return { calls, disabled: remoteDisabled() };
+    } finally {
+      globalThis.fetch = real;
+      resetRemote();
+    }
+  };
+
+  it("latches off immediately on 501 — the designed off switch", async () => {
+    const { calls, disabled } = await withFetch(() => new Response("{}", { status: 501 }));
+    expect(disabled).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("gives up after three failures of any other kind", async () => {
+    const { calls, disabled } = await withFetch(() => new Response("boom", { status: 500 }));
+    expect(disabled).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("counts a network error as a failure too", async () => {
+    const { calls, disabled } = await withFetch(() => {
+      throw new Error("offline");
+    });
+    expect(disabled).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("does not hold a one-off blip against a working route", async () => {
+    const real = globalThis.fetch;
+    let n = 0;
+    globalThis.fetch = (() => {
+      n += 1;
+      return Promise.resolve(
+        n === 1 || n === 3
+          ? new Response("boom", { status: 500 })
+          : new Response(JSON.stringify({ ops: [] }), { status: 200 }),
+      );
+    }) as typeof fetch;
+    try {
+      resetRemote();
+      for (let i = 0; i < 6; i += 1) await parseRemote("do a thing", { labels: [] });
+      // Failures alternate with successes, so the streak never reaches three.
+      expect(remoteDisabled()).toBe(false);
+      expect(n).toBe(6);
+    } finally {
+      globalThis.fetch = real;
+      resetRemote();
+    }
   });
 });

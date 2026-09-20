@@ -1,5 +1,11 @@
-import { buildRequest, decode } from "../src/voice/jev";
-import { validateOps } from "../src/voice/ops";
+// The `.js` on these is load-bearing, not a typo. This package is `"type":
+// "module"`, so Vercel transpiles this route to ESM without bundling it —
+// and Node's ESM resolver does not guess extensions. Extensionless, the
+// route compiles, deploys, and then dies on its first invocation with
+// ERR_MODULE_NOT_FOUND, which reaches the browser as a 500 rather than the
+// 501 that means "no key here". Vite and tsc both map `.js` back to `.ts`.
+import { buildRequest, decode } from "../src/voice/jev.js";
+import { validateOps } from "../src/voice/ops.js";
 
 /**
  * Optional second-tier voice parser, backed by TypeSafe's Jev.
@@ -65,11 +71,16 @@ function isStringArray(x: unknown): x is string[] {
   return Array.isArray(x) && x.every((v) => typeof v === "string");
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
-  }
-
+/**
+ * Exported as `POST` rather than as a default handler on purpose. Vercel's
+ * default export is the Node `(req, res) => void` signature, where a returned
+ * value is discarded — a route written Web-style against it does not error, it
+ * simply never answers, and the browser waits out its own timeout on every
+ * utterance. A named method export is what opts this file into `Request` →
+ * `Response`, and it makes the method check redundant: anything but POST is
+ * rejected before it reaches this code.
+ */
+export async function POST(req: Request): Promise<Response> {
   const apiKey = process.env.VOICE_API_KEY;
   if (!apiKey) {
     // The client latches onto 501 and stops sending — this is the normal

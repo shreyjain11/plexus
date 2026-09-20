@@ -62,6 +62,11 @@ test.describe("the in-browser model, actually loaded", () => {
     const note = page.locator(".voice__opt-note");
     await expect(note).toContainText("30 MB");
 
+    // `check()` fails unless the box flips on the spot, which makes this the
+    // regression test for a bug only a real network shows: the checkbox used
+    // to be driven by the loader, and the loader is itself a dynamic import,
+    // so the click did visibly nothing until a chunk arrived. Locally that is
+    // a millisecond and invisible; over the wire it reads as broken.
     await page.getByTestId("voice-local").check();
     // 30 MB is worth a progress reading rather than a dead checkbox.
     await expect(note).toContainText(/downloading|starting/, { timeout: 60_000 });
@@ -91,10 +96,10 @@ test.describe("the in-browser model, actually loaded", () => {
 
     // The label promises "runs offline". Hold it to that: sever every route to
     // the model and the runtime, leaving only the app's own origin.
+    const origin = new URL(page.url()).origin;
     await context.route("**/*", (route) => {
-      const url = route.request().url();
-      const remote = !url.startsWith("http://localhost:5173");
-      return remote ? route.abort() : route.continue();
+      const sameOrigin = route.request().url().startsWith(origin);
+      return sameOrigin ? route.continue() : route.abort();
     });
 
     const input = page.getByTestId("voice-input");

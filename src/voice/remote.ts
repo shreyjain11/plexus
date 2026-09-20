@@ -17,6 +17,17 @@ const TIMEOUT_MS = 8000;
 
 /** Set once the server says it has no key; suppresses all further requests. */
 let unconfigured = false;
+/** Consecutive failures that were not a clean "no key here". */
+let strikes = 0;
+/**
+ * A tier that cannot answer must not keep costing a round trip. 501 is the
+ * designed off switch, but a deploy can be broken in less tidy ways — no
+ * function at all (404), a route that crashes on import (500) — and the user
+ * should not pay a network wait per utterance to rediscover that each time.
+ * Three failures of any kind and this tier stands down for the session; the
+ * offline grammar and the in-browser model are unaffected.
+ */
+const MAX_STRIKES = 3;
 
 export function remoteDisabled(): boolean {
   return unconfigured;
@@ -25,6 +36,12 @@ export function remoteDisabled(): boolean {
 /** Test seam — resets the latched 501 between cases. */
 export function resetRemote(): void {
   unconfigured = false;
+  strikes = 0;
+}
+
+function strike(): void {
+  strikes += 1;
+  if (strikes >= MAX_STRIKES) unconfigured = true;
 }
 
 export interface RemoteResult {
@@ -62,15 +79,20 @@ export async function parseRemote(
       unconfigured = true;
       return { ops: [], status: "unconfigured" };
     }
-    if (!res.ok) return { ops: [], status: "error" };
+    if (!res.ok) {
+      strike();
+      return { ops: [], status: "error" };
+    }
 
     const body: unknown = await res.json();
     const ops =
       typeof body === "object" && body !== null && "ops" in body
         ? validateOps((body as { ops: unknown }).ops)
         : [];
+    strikes = 0;
     return { ops, status: "ready" };
   } catch {
+    strike();
     return { ops: [], status: "error" };
   } finally {
     clearTimeout(timer);
